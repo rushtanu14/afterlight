@@ -3,6 +3,7 @@ import { getAllFailures, incidentOptions, replayEvents } from "./data/replay";
 import { Hero } from "./components/Hero";
 import { OfflineSection } from "./components/OfflineSection";
 import { ReplayWorkspace } from "./components/ReplayWorkspace";
+import { defaultHouseholdProfile, replayDecisionSeries } from "./engine/detector";
 
 const firstFailureId = replayEvents[0]?.failures[0]?.id ?? "";
 
@@ -17,6 +18,8 @@ export function App() {
   const [selectedIncidentId, setSelectedIncidentId] = useState(incidentOptions[0]?.id ?? "");
 
   const activeEvent = replayEvents[activeIndex];
+  const decisionSeries = useMemo(() => replayDecisionSeries(replayEvents, defaultHouseholdProfile), []);
+  const activeDecision = decisionSeries[activeIndex];
   const selectedIncident = incidentOptions.find((incident) => incident.id === selectedIncidentId) ?? incidentOptions[0];
   const allFailures = useMemo(() => getAllFailures(), []);
   const memoryCards = useMemo(() => allFailures.filter((failure) => confirmedFailures.has(failure.id)), [allFailures, confirmedFailures]);
@@ -86,11 +89,13 @@ export function App() {
         onReplayStart={handleReplayStart}
       />
       <ReplayWorkspace
+        activeDecision={activeDecision}
         activeEvent={activeEvent}
         activeIndex={activeIndex}
         confirmedFailures={confirmedFailures}
         edits={edits}
         events={replayEvents}
+        decisionSeries={decisionSeries}
         incidents={incidentOptions}
         isPlaying={isPlaying}
         locationInput={locationInput}

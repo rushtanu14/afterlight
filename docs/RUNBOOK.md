@@ -17,6 +17,7 @@ Generated from `package.json`, `vite.config.ts`, and infrastructure file discove
 | Environment template | None detected |
 | Docker configuration | None detected |
 | OpenAPI spec | None detected |
+| Test suite | Vitest detector tests via `npm run test` |
 <!-- AUTO-GENERATED:END service-inventory -->
 
 ## Deployment Procedure
@@ -35,6 +36,7 @@ Generated from `package.json`.
 Run these checks before sharing a build:
 
 ```bash
+npm run test
 npm run build
 npm run preview
 ```

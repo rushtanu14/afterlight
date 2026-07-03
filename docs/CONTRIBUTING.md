@@ -26,6 +26,7 @@ Generated from `package.json`.
 | `npm run dev` | Start the Vite development server on `127.0.0.1`. |
 | `npm run build` | Run TypeScript project build checks, then create the production Vite build in `dist/`. |
 | `npm run preview` | Serve the production build locally with Vite preview on `127.0.0.1`. |
+| `npm run test` | Run the Vitest detector test suite. |
 <!-- AUTO-GENERATED:END scripts -->
 
 ## Environment
@@ -50,19 +51,22 @@ Generated from `src/`.
 | `src/components/OfflineSection.tsx` | Renders before/during/after offline resilience cards. |
 | `src/components/ReplayWorkspace.tsx` | Renders incident search results, replay controls, OSM-backed map overlays, source connectors, detected failures, and household memory cards. |
 | `src/data/replay.ts` | Defines replay event and failure types plus the curated incident sequence. |
+| `src/engine/detector.ts` | Scores replay signals into route risk, backup overload, leave-before mode, and evidence trails. |
+| `src/engine/sourceConnectors.ts` | Defines source connector metadata and readiness scoring. |
 | `src/main.tsx` | Mounts the React app into the page. |
 | `src/styles.css` | Contains the full visual system and responsive layout rules. |
 <!-- AUTO-GENERATED:END source-layout -->
 
 ## Testing
 
-There is no dedicated automated test script in `package.json` yet. For now, use the production build as the required verification gate:
+Run detector tests and production build before sharing a submission:
 
 ```bash
+npm run test
 npm run build
 ```
 
-When adding detector logic, replay calculations, or higher-risk UI behavior, add a test script before relying on manual browser checks alone.
+When adding detector logic, replay calculations, or higher-risk UI behavior, update `tests/detector.test.ts` before relying on manual browser checks alone.
 
 ## Code Style
 

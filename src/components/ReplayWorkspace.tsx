@@ -1,12 +1,16 @@
 import type { CSSProperties } from "react";
 import type { Failure, IncidentOption, ReplayEvent } from "../data/replay";
+import type { DetectorDecision } from "../engine/detector";
+import { connectorReadinessScore, sourceConnectors } from "../engine/sourceConnectors";
 
 type ReplayWorkspaceProps = {
+  activeDecision: DetectorDecision;
   activeEvent: ReplayEvent;
   activeIndex: number;
   confirmedFailures: Set<string>;
   edits: Record<string, string>;
   events: ReplayEvent[];
+  decisionSeries: DetectorDecision[];
   incidents: IncidentOption[];
   isPlaying: boolean;
   locationInput: string;
@@ -33,25 +37,18 @@ const mapTiles = [
   { x: 700, y: 1635 }
 ];
 
-const connectors = [
-  { name: "NWS", status: "watch", detail: "red flag and wind context" },
-  { name: "CAL FIRE", status: "incident", detail: "incident and evacuation vocabulary" },
-  { name: "NASA FIRMS", status: "thermal", detail: "satellite fire-detection reference" },
-  { name: "OpenStreetMap", status: "map", detail: "road geometry and tile base" },
-  { name: "ArcGIS", status: "perimeter", detail: "dashboard and perimeter pattern" },
-  { name: "Household", status: "memory", detail: "mobility, medication, route rules" }
-];
-
 function cssProgress(value: number): CSSProperties {
   return { "--progress": `${value}%` } as CSSProperties;
 }
 
 export function ReplayWorkspace({
+  activeDecision,
   activeEvent,
   activeIndex,
   confirmedFailures,
   edits,
   events,
+  decisionSeries,
   incidents,
   isPlaying,
   locationInput,
@@ -68,6 +65,9 @@ export function ReplayWorkspace({
   onSpeedChange,
   onTogglePlay
 }: ReplayWorkspaceProps) {
+  const connectorScore = connectorReadinessScore(sourceConnectors);
+  const firstLeaveNow = decisionSeries.find((decision) => decision.mode === "leave_now");
+
   return (
     <section className="workspace" id="replay" aria-labelledby="workspace-title">
       <div className="workspace-hero">
@@ -188,31 +188,41 @@ export function ReplayWorkspace({
           <div className="panel-header">
             <div>
               <p className="signal-label">Decision engine</p>
-              <h3>Leave before signs stack again.</h3>
+              <h3>{activeDecision.mode === "leave_now" ? "Leave now threshold crossed." : "Leave before signs stack again."}</h3>
             </div>
-            <span className="feed-pill">{activeEvent.officialConfidence}% official</span>
+            <span className="feed-pill">{activeDecision.score} risk score</span>
           </div>
           <div className="signal-stack">
             <div>
-              <span>Fire spread</span>
-              <i style={cssProgress(activeEvent.spread)} />
-              <strong>{activeEvent.spread}%</strong>
+              <span>Route closure risk</span>
+              <i style={cssProgress(activeDecision.routeClosureRisk === "high" ? 92 : activeDecision.routeClosureRisk === "medium" ? 58 : 24)} />
+              <strong>{activeDecision.routeClosureRisk}</strong>
             </div>
             <div>
-              <span>Route stress</span>
-              <i style={cssProgress(activeEvent.routeStress)} />
-              <strong>{activeEvent.routeStress}%</strong>
+              <span>Backup overload</span>
+              <i style={cssProgress(activeDecision.backupOverloadRisk === "high" ? 88 : activeDecision.backupOverloadRisk === "medium" ? 55 : 18)} />
+              <strong>{activeDecision.backupOverloadRisk}</strong>
             </div>
             <div>
-              <span>Source confidence</span>
-              <i style={cssProgress(activeEvent.officialConfidence)} />
-              <strong>{activeEvent.officialConfidence}%</strong>
+              <span>Mobility buffer</span>
+              <i style={cssProgress(activeDecision.mobilityBufferMinutes + 40)} />
+              <strong>{activeDecision.mobilityBufferMinutes}m</strong>
             </div>
           </div>
           <article className="action-card">
-            <span>Recommended action</span>
-            <p>{activeEvent.recommendedAction}</p>
+            <span>Recommended route</span>
+            <p>
+              {activeDecision.recommendedRoute.name}: {activeDecision.leaveBeforeSignal}
+            </p>
           </article>
+          <div className="rule-trace" aria-label="Detector rule trace">
+            {activeDecision.evidenceTrail.slice(0, 4).map((item) => (
+              <span key={`${item.rule}-${item.time}`}>
+                <strong>{item.rule.replaceAll("_", " ")}</strong>
+                {item.detail}
+              </span>
+            ))}
+          </div>
         </aside>
       </div>
 
@@ -237,7 +247,9 @@ export function ReplayWorkspace({
                 <span className="event-time">{event.time}</span>
                 <span>
                   <span className="event-title">{event.title}</span>
-                  <p>{event.source}</p>
+                  <p>
+                    {event.source} · {decisionSeries[index]?.mode === "leave_now" ? "leave-now" : decisionSeries[index]?.routeClosureRisk ?? "risk"} signal
+                  </p>
                 </span>
               </button>
             ))}
@@ -250,17 +262,26 @@ export function ReplayWorkspace({
               <p className="signal-label">Source connectors</p>
               <h3>MCP-ready data chain</h3>
             </div>
-            <span className="feed-pill">6 connectors</span>
+            <span className="feed-pill">{connectorScore}% ready</span>
           </div>
           <div className="connector-grid">
-            {connectors.map((connector) => (
+            {sourceConnectors.map((connector) => (
               <article key={connector.name} className="connector-card">
                 <span>{connector.status}</span>
                 <strong>{connector.name}</strong>
                 <p>{connector.detail}</p>
+                <small>{connector.proof}</small>
               </article>
             ))}
           </div>
+          <article className="engine-proof">
+            <span>Replay validation</span>
+            <strong>First leave-now threshold: {firstLeaveNow?.time ?? "none"}</strong>
+            <p>
+              The detector replays every timestamp in order and records the first point where hazard movement, route stress, and official-source
+              confidence stack into a household route decision.
+            </p>
+          </article>
           <div className="evidence-chain">
             {activeEvent.evidence.map((item) => (
               <a href={item.url} target="_blank" rel="noreferrer" key={`${item.label}-${item.source}`}>
