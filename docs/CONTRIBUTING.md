@@ -34,7 +34,9 @@ Generated from `package.json`.
 <!-- AUTO-GENERATED:START env -->
 Generated from environment template discovery.
 
-No `.env.example`, `.env.template`, or `.env.sample` file is present. The app currently has no documented required runtime environment variables.
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `VITE_FIRMS_MAP_KEY` | No | Optional free NASA FIRMS MAP_KEY for live VIIRS thermal detections. Vite exposes this value in the browser bundle, so use only a rotatable/free key. Leave blank to run the app with Nominatim, NIFC WFIGS, NWS, and EONET only. | `abc123-free-map-key` |
 <!-- AUTO-GENERATED:END env -->
 
 ## Source Layout
@@ -52,6 +54,7 @@ Generated from `src/`.
 | `src/components/ReplayWorkspace.tsx` | Renders incident search results, replay controls, OSM-backed map overlays, source connectors, detected failures, and household memory cards. |
 | `src/data/replay.ts` | Defines replay event and failure types plus the curated incident sequence. |
 | `src/engine/detector.ts` | Scores replay signals into route risk, backup overload, leave-before mode, and evidence trails. |
+| `src/engine/liveSources.ts` | Fetches and normalizes free/public live source data from OpenStreetMap Nominatim, NIFC WFIGS, NWS alerts, NASA EONET, and optional NASA FIRMS. |
 | `src/engine/sourceConnectors.ts` | Defines source connector metadata and readiness scoring. |
 | `src/main.tsx` | Mounts the React app into the page. |
 | `src/styles.css` | Contains the full visual system and responsive layout rules. |

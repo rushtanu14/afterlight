@@ -14,7 +14,7 @@ Generated from `package.json`, `vite.config.ts`, and infrastructure file discove
 | Development port | `5173` |
 | Production artifact | `dist/` from `npm run build` |
 | Backend/API | None detected |
-| Environment template | None detected |
+| Environment template | `.env.example` with optional `VITE_FIRMS_MAP_KEY` |
 | Docker configuration | None detected |
 | OpenAPI spec | None detected |
 | Test suite | Vitest detector tests via `npm run test` |
@@ -44,6 +44,7 @@ npm run preview
 Then open the preview URL and verify:
 
 - The hero renders.
+- Searching `Pacific Palisades, CA` updates the incident list from live public sources or shows source health if a feed is quiet/limited.
 - `Enter Afterlight` scrolls to the replay workspace.
 - The replay play button advances the timeline.
 - Confirming a failure creates a household memory card.
@@ -57,6 +58,7 @@ Then open the preview URL and verify:
 | Build fails in TypeScript | Component prop or replay-data shape drifted | Fix the source type mismatch; do not bypass strict mode. |
 | Preview shows stale UI | `dist/` was not rebuilt | Run `npm run build` again before preview/deploy. |
 | Hero canvas appears blank | Browser canvas or reduced-motion behavior needs inspection | Check console errors and verify `EmberCanvas.tsx` still mounts inside `Hero.tsx`. |
+| Live source shows `limited` | A public API is throttled or temporarily down | Keep the other feed results visible; retry later or add `VITE_FIRMS_MAP_KEY` for FIRMS thermal detections. |
 
 ## Rollback
 

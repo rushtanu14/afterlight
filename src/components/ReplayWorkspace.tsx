@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Failure, IncidentOption, ReplayEvent } from "../data/replay";
 import type { DetectorDecision } from "../engine/detector";
+import type { LiveLocation, LiveSignal, LiveSourceState } from "../engine/liveSources";
 import { connectorReadinessScore, sourceConnectors } from "../engine/sourceConnectors";
 
 type ReplayWorkspaceProps = {
@@ -13,6 +14,10 @@ type ReplayWorkspaceProps = {
   decisionSeries: DetectorDecision[];
   incidents: IncidentOption[];
   isPlaying: boolean;
+  liveError: string;
+  liveLocation: LiveLocation | null;
+  liveSignals: LiveSignal[];
+  liveSourceStates: LiveSourceState[];
   locationInput: string;
   memoryCards: Failure[];
   searchStatus: "idle" | "loading" | "ready";
@@ -28,17 +33,106 @@ type ReplayWorkspaceProps = {
   onTogglePlay: () => void;
 };
 
-const mapTiles = [
-  { x: 698, y: 1634 },
-  { x: 699, y: 1634 },
-  { x: 700, y: 1634 },
-  { x: 698, y: 1635 },
-  { x: 699, y: 1635 },
-  { x: 700, y: 1635 }
-];
+const fallbackLocation = { latitude: 34.0480643, longitude: -118.5264706 };
+const mapZoom = 10;
+
+type MapTile = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+type MapPoint = {
+  id: string;
+  label: string;
+  kind: "home" | "fire";
+  x: number;
+  y: number;
+  selected?: boolean;
+};
 
 function cssProgress(value: number): CSSProperties {
   return { "--progress": `${value}%` } as CSSProperties;
+}
+
+function lonToTileX(longitude: number, zoom: number) {
+  return ((longitude + 180) / 360) * 2 ** zoom;
+}
+
+function latToTileY(latitude: number, zoom: number) {
+  const radians = (latitude * Math.PI) / 180;
+  return ((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * 2 ** zoom;
+}
+
+function buildTiles(center: Pick<LiveLocation, "latitude" | "longitude">): MapTile[] {
+  const centerX = Math.floor(lonToTileX(center.longitude, mapZoom));
+  const centerY = Math.floor(latToTileY(center.latitude, mapZoom));
+  return [
+    { x: centerX - 1, y: centerY - 1, z: mapZoom },
+    { x: centerX, y: centerY - 1, z: mapZoom },
+    { x: centerX + 1, y: centerY - 1, z: mapZoom },
+    { x: centerX - 1, y: centerY, z: mapZoom },
+    { x: centerX, y: centerY, z: mapZoom },
+    { x: centerX + 1, y: centerY, z: mapZoom }
+  ];
+}
+
+function mapCenter(liveLocation: LiveLocation | null, selectedIncident: IncidentOption) {
+  if (liveLocation && selectedIncident.latitude !== undefined && selectedIncident.longitude !== undefined) {
+    return {
+      latitude: (liveLocation.latitude + selectedIncident.latitude) / 2,
+      longitude: (liveLocation.longitude + selectedIncident.longitude) / 2
+    };
+  }
+
+  if (selectedIncident.latitude !== undefined && selectedIncident.longitude !== undefined) {
+    return { latitude: selectedIncident.latitude, longitude: selectedIncident.longitude };
+  }
+
+  return liveLocation ?? fallbackLocation;
+}
+
+function projectPoint(latitude: number, longitude: number, tiles: MapTile[]) {
+  const startX = Math.min(...tiles.map((tile) => tile.x));
+  const startY = Math.min(...tiles.map((tile) => tile.y));
+  const worldX = lonToTileX(longitude, mapZoom);
+  const worldY = latToTileY(latitude, mapZoom);
+  const x = ((worldX - startX) / 3) * 900;
+  const y = ((worldY - startY) / 2) * 560;
+
+  if (x < -20 || x > 920 || y < -20 || y > 580) return null;
+  return { x, y };
+}
+
+function buildMapPoints(liveLocation: LiveLocation | null, incidents: IncidentOption[], selectedIncidentId: string, tiles: MapTile[]): MapPoint[] {
+  const homeProjection = liveLocation ? projectPoint(liveLocation.latitude, liveLocation.longitude, tiles) : projectPoint(fallbackLocation.latitude, fallbackLocation.longitude, tiles);
+  const homePoint: MapPoint | null = homeProjection
+    ? {
+        id: "home",
+        label: liveLocation?.label ?? "Searched area",
+        kind: "home",
+        x: homeProjection.x,
+        y: homeProjection.y
+      }
+    : null;
+  const firePoints = incidents
+    .filter((incident) => incident.latitude !== undefined && incident.longitude !== undefined)
+    .map((incident): MapPoint | null => {
+      const projected = projectPoint(incident.latitude as number, incident.longitude as number, tiles);
+      return projected
+        ? {
+            id: incident.id,
+            label: incident.name,
+            kind: "fire" as const,
+            x: projected.x,
+            y: projected.y,
+            selected: incident.id === selectedIncidentId
+          }
+        : null;
+    })
+    .filter((point): point is MapPoint => point !== null);
+
+  return homePoint ? [homePoint, ...firePoints] : firePoints;
 }
 
 export function ReplayWorkspace({
@@ -51,6 +145,10 @@ export function ReplayWorkspace({
   decisionSeries,
   incidents,
   isPlaying,
+  liveError,
+  liveLocation,
+  liveSignals,
+  liveSourceStates,
   locationInput,
   memoryCards,
   searchStatus,
@@ -67,6 +165,11 @@ export function ReplayWorkspace({
 }: ReplayWorkspaceProps) {
   const connectorScore = connectorReadinessScore(sourceConnectors);
   const firstLeaveNow = decisionSeries.find((decision) => decision.mode === "leave_now");
+  const center = mapCenter(liveLocation, selectedIncident);
+  const mapTiles = buildTiles(center);
+  const mapPoints = buildMapPoints(liveLocation, incidents, selectedIncidentId, mapTiles);
+  const hasLiveSources = liveSourceStates.length > 0;
+  const liveIncidentCount = incidents.filter((incident) => incident.sourceId).length;
 
   return (
     <section className="workspace" id="replay" aria-labelledby="workspace-title">
@@ -105,10 +208,14 @@ export function ReplayWorkspace({
           <div className="panel-header">
             <div>
               <p className="signal-label">Search area</p>
-              <h3>{locationInput}</h3>
+              <h3>{liveLocation?.label ?? locationInput}</h3>
             </div>
-            <span className="feed-pill">{searchStatus === "loading" ? "Scanning" : "Matched"}</span>
+            <span className="feed-pill">{searchStatus === "loading" ? "Scanning" : hasLiveSources ? "Live query" : "Matched"}</span>
           </div>
+          {liveError ? <p className="inline-alert">{liveError}</p> : null}
+          {hasLiveSources && liveIncidentCount === 0 ? (
+            <p className="inline-note">No current wildfire points were returned nearby; reference records remain loaded for the replay engine.</p>
+          ) : null}
           <div className="incident-list">
             {incidents.map((incident) => (
               <button
@@ -118,7 +225,7 @@ export function ReplayWorkspace({
                 onClick={() => onSelectIncident(incident.id)}
                 aria-pressed={incident.id === selectedIncidentId}
               >
-                <span>{incident.distance}</span>
+                <span>{incident.sourceId ? `${incident.sourceId.toUpperCase()} · ${incident.distance}` : incident.distance}</span>
                 <strong>{incident.name}</strong>
                 <small>{incident.location}</small>
               </button>
@@ -140,12 +247,12 @@ export function ReplayWorkspace({
             <span className={`feed-pill risk-${activeEvent.risk}`}>{activeEvent.risk}</span>
           </div>
 
-          <div className="map-stage" aria-label="Pacific Palisades map with route and fire overlays">
+          <div className="map-stage" aria-label="Live incident map with route and fire overlays">
             <div className="osm-grid" aria-hidden="true">
               {mapTiles.map((tile) => (
                 <img
-                  key={`${tile.x}-${tile.y}`}
-                  src={`https://tile.openstreetmap.org/12/${tile.x}/${tile.y}.png`}
+                  key={`${tile.z}-${tile.x}-${tile.y}`}
+                  src={`https://tile.openstreetmap.org/${tile.z}/${tile.x}/${tile.y}.png`}
                   alt=""
                   loading="lazy"
                 />
@@ -167,16 +274,28 @@ export function ReplayWorkspace({
               <path className="route backup-route" d="M96 374 C214 356 326 340 430 300 C548 256 650 244 790 282" />
               <path className="blocked-route" d="M342 160 C458 190 568 214 690 206" />
               <path className="smoke-vector" d="M662 112 C568 126 472 148 374 194 C292 232 214 270 132 302" />
-              <circle className="node home-node" cx="128" cy="438" r="10" />
-              <circle className="node help-node" cx="258" cy="352" r="8" />
-              <circle className="node fire-node" cx="674" cy="142" r="11" />
+              {mapPoints.map((point) => (
+                <circle
+                  className={`node ${point.kind === "home" ? "home-node" : "live-fire-node"}${point.selected ? " selected" : ""}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r={point.kind === "home" ? 10 : point.selected ? 12 : 8}
+                  key={point.id}
+                >
+                  <title>{point.label}</title>
+                </circle>
+              ))}
             </svg>
             <div className="map-callout fire">Fire movement</div>
             <div className="map-callout primary">Primary route</div>
             <div className="map-callout backup">Backup route</div>
             <div className="map-caption">
               <strong>{activeEvent.signal}</strong>
-              <span>{activeEvent.caption}</span>
+              <span>
+                {selectedIncident.sourceId
+                  ? `${selectedIncident.name} is plotted from ${selectedIncident.confidence}; route overlays show the household decision model.`
+                  : activeEvent.caption}
+              </span>
             </div>
             <a className="map-credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
               OpenStreetMap
@@ -260,10 +379,35 @@ export function ReplayWorkspace({
           <div className="panel-header">
             <div>
               <p className="signal-label">Source connectors</p>
-              <h3>MCP-ready data chain</h3>
+              <h3>Live public data chain</h3>
             </div>
             <span className="feed-pill">{connectorScore}% ready</span>
           </div>
+          {hasLiveSources ? (
+            <div className="live-source-list" aria-label="Live source health">
+              {liveSourceStates.map((state) => (
+                <article className={`live-source-row status-${state.status}`} key={state.id}>
+                  <span>{state.status}</span>
+                  <strong>{state.name}</strong>
+                  <p>{state.detail}</p>
+                  <small>
+                    {state.count} records · {new Date(state.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                  </small>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          {liveSignals.length > 0 ? (
+            <div className="live-signal-strip" aria-label="Live alerts and thermal signals">
+              {liveSignals.slice(0, 4).map((signal) => (
+                <a className={`live-signal severity-${signal.severity}`} href={signal.url} target="_blank" rel="noreferrer" key={signal.id}>
+                  <span>{signal.source}</span>
+                  <strong>{signal.title}</strong>
+                  <p>{signal.detail}</p>
+                </a>
+              ))}
+            </div>
+          ) : null}
           <div className="connector-grid">
             {sourceConnectors.map((connector) => (
               <article key={connector.name} className="connector-card">

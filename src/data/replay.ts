@@ -45,6 +45,13 @@ export type IncidentOption = {
   confidence: string;
   summary: string;
   sources: IncidentSource[];
+  sourceId?: string;
+  latitude?: number;
+  longitude?: number;
+  acres?: number;
+  containment?: number | null;
+  lastUpdated?: string;
+  feedUrl?: string;
 };
 
 export const incidentOptions: IncidentOption[] = [

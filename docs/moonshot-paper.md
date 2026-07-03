@@ -41,7 +41,8 @@ The current prototype is intentionally narrow and auditable.
 
 - `src/data/replay.ts` stores curated replay events, incident options, official-source links, route stress, hazard movement, source confidence, and failure cards.
 - `src/engine/detector.ts` scores each timestamp into route closure risk, backup overload risk, mode, route choice, leave-before signal, and an evidence trail.
-- `src/engine/sourceConnectors.ts` models the future connector layer for NWS, CAL FIRE, NASA FIRMS, OpenStreetMap, ArcGIS, and household memory.
+- `src/engine/liveSources.ts` ingests free public sources: OpenStreetMap Nominatim geocoding, NIFC WFIGS current wildfire points, NWS active alerts, NASA EONET open wildfire events, and optional NASA FIRMS thermal detections with a free map key.
+- `src/engine/sourceConnectors.ts` keeps the visible connector contract for NWS, CAL FIRE, NASA FIRMS, OpenStreetMap, ArcGIS, and household memory.
 - `src/components/ReplayWorkspace.tsx` renders the source chain, map overlay, rule trace, failure confirmation, and household cards.
 - `tests/detector.test.ts` verifies the detector catches the first leave-now threshold in timestamp order.
 

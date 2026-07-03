@@ -3,6 +3,7 @@ import { EmberCanvas } from "./EmberCanvas";
 
 type HeroProps = {
   incidentCount: number;
+  liveSourceCount: number;
   locationInput: string;
   searchStatus: "idle" | "loading" | "ready";
   onLocationChange: (value: string) => void;
@@ -10,7 +11,15 @@ type HeroProps = {
   onReplayStart: () => void;
 };
 
-export function Hero({ incidentCount, locationInput, searchStatus, onLocationChange, onLocationSearch, onReplayStart }: HeroProps) {
+export function Hero({
+  incidentCount,
+  liveSourceCount,
+  locationInput,
+  searchStatus,
+  onLocationChange,
+  onLocationSearch,
+  onReplayStart
+}: HeroProps) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onLocationSearch();
@@ -74,8 +83,8 @@ export function Hero({ incidentCount, locationInput, searchStatus, onLocationCha
               timestamp rows
             </span>
             <span>
-              <strong>6</strong>
-              source connectors
+              <strong>{liveSourceCount}</strong>
+              live sources
             </span>
             <span>
               <strong>30m</strong>

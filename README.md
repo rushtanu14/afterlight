@@ -8,6 +8,7 @@ Afterlight is a static React app. The current source of truth is:
 
 - `src/data/replay.ts` for replay events, failure records, source labels, risk labels, and offline-cache percentages.
 - `src/engine/detector.ts` for the tested replay-to-decision detector.
+- `src/engine/liveSources.ts` for free/public API ingestion from OpenStreetMap Nominatim, NIFC WFIGS, NWS alerts, NASA EONET, and optional NASA FIRMS.
 - `src/engine/sourceConnectors.ts` for source connector metadata and readiness scoring.
 - `src/App.tsx` for replay state, confirmation state, card editing, and playback timing.
 - `src/components/ReplayWorkspace.tsx` for location-ranked incidents, timeline controls, OSM-backed map visualization, source connectors, failure confirmation, and generated memory cards.
@@ -41,6 +42,17 @@ Open the local Vite URL, usually:
 http://127.0.0.1:5173
 ```
 
+## Environment
+
+Copy `.env.example` only when you want optional NASA FIRMS thermal detections:
+
+```bash
+VITE_FIRMS_MAP_KEY=
+```
+
+The rest of the live ingestion uses free public endpoints without app-specific secrets.
+Because Vite exposes `VITE_` values in the browser bundle, use only a rotatable/free FIRMS key here; a production version should proxy paid or sensitive credentials server-side.
+
 ## Production Build
 
 ```bash
@@ -56,6 +68,7 @@ npm run build
 
 - React component app shell with a cinematic animated wildfire hero
 - Location intake with ranked nearby incident records
+- Live public API ingestion for geocoding, current wildland-fire incident points, NWS alerts, NASA open wildfire events, and optional FIRMS thermal detections
 - Timestamped incident replay for a Palisades / Eaton-style wildfire scenario
 - OpenStreetMap-backed incident map with fire spread, blocked road, primary route, and backup route overlays
 - Visible source connector layer for NWS, CAL FIRE, NASA FIRMS, OpenStreetMap, ArcGIS, and household memory
