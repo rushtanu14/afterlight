@@ -42,27 +42,11 @@ Open the local Vite URL, usually:
 http://127.0.0.1:5173
 ```
 
-## Environment
-
-Copy `.env.example` only when you want optional NASA FIRMS thermal detections:
-
-```bash
-VITE_FIRMS_MAP_KEY=
-```
-
-The rest of the live ingestion uses free public endpoints without app-specific secrets.
-Because Vite exposes `VITE_` values in the browser bundle, use only a rotatable/free FIRMS key here; a production version should proxy paid or sensitive credentials server-side.
-
 ## Production Build
 
 ```bash
 npm run build
 ```
-
-## Judge Materials
-
-- Moonshot paper: `docs/moonshot-paper.md`
-- Vision presentation script: `docs/vision-presentation.md`
 
 ## What is included
 
@@ -76,4 +60,3 @@ npm run build
 - Failure confirmation and editable lesson cards
 - Generated household memory cards and before/during/after resilience framing
 
-The Google Stitch MCP API key shared in chat was not written into this repository.
