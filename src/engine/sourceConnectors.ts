@@ -1,3 +1,5 @@
+import type { LiveSourceState } from "./liveSources";
+
 export type SourceConnector = {
   id: string;
   name: string;
@@ -13,7 +15,7 @@ export const sourceConnectors: SourceConnector[] = [
     name: "NWS",
     status: "watch",
     detail: "red flag and wind context",
-    proof: "Weather alerts become early leave-before signals.",
+    proof: "Current alert records remain descriptive and separate from historical replay.",
     mode: "live-api"
   },
   {
@@ -21,15 +23,15 @@ export const sourceConnectors: SourceConnector[] = [
     name: "CAL FIRE",
     status: "incident",
     detail: "incident and evacuation vocabulary",
-    proof: "Official incident language grounds route and warning states.",
+    proof: "Curated official incident language remains source evidence, not current guidance.",
     mode: "curated-official"
   },
   {
     id: "nasa-firms",
     name: "NASA FIRMS",
-    status: "thermal",
-    detail: "satellite fire-detection reference",
-    proof: "Thermal detections are treated as evidence, never as evacuation orders.",
+    status: "optional",
+    detail: "server proxy required",
+    proof: "No FIRMS credential or request is exposed to the browser.",
     mode: "public-map"
   },
   {
@@ -52,17 +54,25 @@ export const sourceConnectors: SourceConnector[] = [
     id: "household-memory",
     name: "Household",
     status: "memory",
-    detail: "mobility, medication, route rules",
-    proof: "Local needs turn official signals into household-specific timing.",
+    detail: "case-scoped preparedness lessons",
+    proof: "Device-local edits preserve household review notes without producing current action guidance.",
     mode: "household-memory"
   }
 ];
 
-export function connectorReadinessScore(connectors: SourceConnector[]) {
-  const weighted = connectors.reduce((total, connector) => {
-    const weight = connector.mode === "household-memory" ? 1.4 : connector.mode === "live-api" ? 1.2 : 1;
-    return total + weight;
-  }, 0);
+export type SourceHealthSummary = {
+  checked: number;
+  usable: number;
+  degraded: number;
+};
 
-  return Math.round((weighted / (connectors.length * 1.4)) * 100);
+export function summarizeSourceHealth(states: LiveSourceState[]): SourceHealthSummary {
+  const checkedStates = states.filter((state) => state.status !== "optional");
+  const usable = checkedStates.filter((state) => state.status === "live" || state.status === "quiet").length;
+
+  return {
+    checked: checkedStates.length,
+    usable,
+    degraded: checkedStates.length - usable
+  };
 }

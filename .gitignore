@@ -1,6 +1,11 @@
 node_modules/
 dist/
+.superpowers/
 artifacts/screenshots/
+artifacts/playwright/
+artifacts/playwright-report/
 tsconfig.tsbuildinfo
 .DS_Store
 *.log
+.env*
+!.env.example
