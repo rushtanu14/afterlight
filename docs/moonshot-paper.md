@@ -2,95 +2,81 @@
 
 ## Core Claim
 
-Evacuation failure is usually treated as a routing problem or an alerting problem. Afterlight argues that it is a memory problem.
+Disaster-response tools are usually built around the present: current alerts, current maps, and current roads. Afterlight explores a different primitive—an attributable memory of how a failure chain unfolded and what a household chose to preserve from it.
 
-Communities repeatedly learn the same painful lessons: a familiar road fails under smoke and congestion, a warning arrives after visible signs, someone with limited mobility needs extra time, and the lesson disappears after the incident report fades. Afterlight turns those past failure chains into a replayable decision engine.
+The prototype does not predict the next fire or tell a household when or where to evacuate. It makes historical evidence inspectable, keeps current public records separate, and lets a household turn reviewed source rows into case-scoped memory.
 
-## Misunderstood Problem
+## The Product Boundary Is the Idea
 
-Most tools ask, "Where is the fire now?" or "What route is open now?"
+Afterlight has two separate surfaces:
 
-That is too late for many households. The practical question is earlier:
+1. **Live Source Monitor:** browser-fetched current incident and alert records with runtime source health. It has no route advice, evacuation timing, historical detector state, or household memory output.
+2. **Historical Replay:** curated Palisades and Eaton source rows with timestamps, source text, categorical signal types, historical route memory, map provenance, and user-confirmed lessons.
 
-What combination of signs should make this specific household leave before the same failure pattern stacks again?
+The separation matters. A current incident that happens to be near a searched area cannot inherit a historical fire’s warning row, route state, illustrative anchor, or household lesson.
 
-## Why Existing Solutions Are Insufficient
+## Historical Replay Model
 
-- Alert dashboards show official status, but they usually do not preserve the local consequence of that status.
-- Route planners optimize the present road graph, but they do not remember when a familiar shortcut historically became unsafe.
-- Preparedness checklists are static, so they fail to absorb evidence from real incidents.
-- Incident reports contain lessons, but they are not executable during the next event.
+Each replay event preserves:
 
-## First-Principles Insight
+- the original timestamp and display time;
+- source label, HTTPS source URL, and official record text;
+- a categorical signal such as incident report, warning, order, or road closure;
+- historical route names and categorical row states;
+- a row-linked illustrative map anchor;
+- a failure lesson and editable future-memory prompt.
 
-A disaster is not only an event. It is a sequence.
+The detector is categorical and fail-closed. `official_action` requires a recognized source/label pair, internally matching timestamp and record text, and source language that supports an evacuation warning or order. A road closure, incident report, awareness notice, malformed row, or unrecognized attribution remains `prepare`. That output describes a historical row and is never current guidance.
 
-If a historical sequence can be represented as timestamped signals, route stress, hazard movement, source confidence, and household constraints, then a future household can use that sequence as a decision object.
+## Source-Row Maps
 
-Afterlight's primitive is therefore not an alert. It is a memory-to-action trace:
+The map combines several evidence types without collapsing them into one claim:
 
-1. Source signal appears.
-2. Failure pattern is detected.
-3. Household constraint is applied.
-4. Route recommendation changes.
-5. The lesson becomes a reusable crisis card.
+- row-linked points labeled as illustrative anchors;
+- stored OpenStreetMap road geometry labeled as a historical snapshot with capture date and ODbL attribution;
+- an attributable ArcGIS dissolved fire perimeter fetched when the map renders;
+- standard OpenStreetMap tiles fetched online for display.
 
-## Prototype Architecture
+The road lines do not state current status and are not route recommendations. Standard OSM tiles are not prefetched or available as an offline emergency map.
 
-The current prototype is intentionally narrow and auditable.
+## Evaluation
 
-- `src/data/replay.ts` stores curated replay events, incident options, official-source links, route stress, hazard movement, source confidence, and failure cards.
-- `src/engine/detector.ts` scores each timestamp into route closure risk, backup overload risk, mode, route choice, leave-before signal, and an evidence trail.
-- `src/engine/liveSources.ts` ingests free public sources: OpenStreetMap Nominatim geocoding, NIFC WFIGS current wildfire points, NWS active alerts, NASA EONET open wildfire events, and optional NASA FIRMS thermal detections with a free map key.
-- `src/engine/sourceConnectors.ts` keeps the visible connector contract for NWS, CAL FIRE, NASA FIRMS, OpenStreetMap, ArcGIS, and household memory.
-- `src/components/ReplayWorkspace.tsx` renders the source chain, map overlay, rule trace, failure confirmation, and household cards.
-- `tests/detector.test.ts` verifies the detector catches the first leave-now threshold in timestamp order.
+The visible evaluation uses three cases:
 
-## Detector Model
+- **Palisades Fire:** six loaded official-source rows; warning/order rows are compared with detector output.
+- **Eaton Fire:** six loaded official-source rows; warning/order rows are compared with detector output.
+- **Camp Fire:** archive-only negative control; granular replay and scoring are blocked because official rows are not loaded.
 
-The detector does not pretend to predict fire behavior. It detects failure-chain recurrence.
+This is a deterministic category/attribution check, not a model-accuracy, outcome, or live-incident performance claim. It demonstrates that the detector recognizes the loaded warning/order rows and refuses to manufacture a timeline for an archive-only incident.
 
-Inputs:
+## Household Memory
 
-- hazard movement
-- route stress
-- official-source confidence
-- assistance or mobility pressure
-- household mobility buffer
+Users can confirm a historical lesson and edit its future-memory text. The app stores confirmations and edits in versioned browser `localStorage`, scoped separately to Palisades and Eaton. Nothing is pre-confirmed.
 
-Outputs:
+Device-local does not mean secure. The data is not encrypted, synchronized, backed up, or protected from other scripts on the same origin. It can disappear when site data is cleared and has no retention or export workflow. Users should not enter exact addresses, medical details, credentials, or other sensitive data.
 
-- `routeClosureRisk`
-- `backupOverloadRisk`
-- `mode`
-- `recommendedRoute`
-- `leaveBeforeSignal`
-- `evidenceTrail`
+## Current Public Sources and Privacy
 
-The first leave-now threshold currently appears at `18:42`, when route stress, hazard movement, and official-source confidence stack together.
+The Live Source Monitor accepts only coarse-area input. The browser sends that text to OpenStreetMap Nominatim, then sends the resulting point or regional bounds to NIFC WFIGS/ArcGIS, NWS, and NASA EONET. Provider policies and request logging apply. The app has no backend privacy proxy.
 
-## Why This Is Not a Route Planner
+NASA FIRMS is not called from the browser and no FIRMS key is accepted. A future FIRMS integration requires a separate server proxy, credential controls, and an explicit privacy review.
 
-A route planner answers: "Where should I go right now?"
+## 90-Second Evidence Run
 
-Afterlight answers: "Which remembered failure pattern is beginning again, and what should this household do before it repeats?"
+`?judge=1` starts a deterministic 90-second walkthrough of both loaded fires. It moves through the thesis, official rows, a non-persisted memory preview, the evaluation panel, and the safety boundary. Reduced-motion preference disables autoplay while preserving manual inspection.
 
-The route is only one part of the artifact. The actual product is the conversion of incident memory into household-specific action.
+## Moonshot Direction
 
-## Long-Term Implications
+The long-term opportunity is civic memory infrastructure: source-backed incident timelines that communities can review, correct, and convert into durable preparedness knowledge. Extending that safely would require official partnerships, provenance governance, accessibility and multilingual work, threat modeling, consent and retention controls, and real community validation.
 
-If this works, cities and households could build disaster memory libraries:
+The present repository does not claim those future capabilities. It demonstrates the narrow trust boundary first.
 
-- fire season route rules
-- school pickup failure patterns
-- mobility-assistance thresholds
-- power and signal loss playbooks
-- post-incident lessons that stay executable
+## Explicit Non-Claims
 
-The future version is a civic memory layer: every incident improves the next decision instead of becoming a PDF that nobody opens again.
-
-## Prototype Boundary
-
-Afterlight is not an official emergency-alerting system. During active emergencies, people must follow official evacuation orders and local agencies.
-
-The prototype demonstrates a new category: disaster memory that operates.
+- Not official emergency guidance or an emergency-alerting service.
+- No fire-spread prediction, numeric risk score, congestion forecast, evacuation-time estimate, or current route recommendation.
+- No offline current-source, alert, perimeter, or map-tile capability.
+- No guarantee that a public feed is complete, timely, accurate, or available.
+- No granular replay for incidents without loaded attributable rows.
+- No public deployment URL or demo video claimed by this repository.
+- **Human validation: Pending — no quote collected. No participant quote is claimed in this repository.**

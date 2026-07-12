@@ -5,13 +5,18 @@ export type OfficialTimelineRow = {
   url: string;
 };
 
-export type NormalizedSignalRow = {
+export type SourceRowCategory =
+  | "route_reference"
+  | "hazard_reference"
+  | "official_notice_reference"
+  | "assistance_reference";
+
+export type NormalizedSourceRow = {
   time: string;
   source: string;
-  routeStress: number;
-  spread: number;
-  officialConfidence: number;
-  tags: string[];
+  sourceText: string;
+  sourceUrl: string;
+  categories: SourceRowCategory[];
 };
 
 function containsAny(text: string, terms: string[]) {
@@ -19,44 +24,23 @@ function containsAny(text: string, terms: string[]) {
   return terms.some((term) => lower.includes(term));
 }
 
-function scoreRouteStress(text: string) {
-  let score = 24;
-  if (containsAny(text, ["road", "route", "corridor", "traffic", "congestion"])) score += 28;
-  if (containsAny(text, ["slowing", "crawl", "blocked", "closure", "closed"])) score += 26;
-  return Math.min(score, 96);
-}
-
-function scoreSpread(text: string) {
-  let score = 22;
-  if (containsAny(text, ["smoke", "column", "fire", "thermal"])) score += 24;
-  if (containsAny(text, ["moving", "spread", "toward", "wind"])) score += 20;
-  return Math.min(score, 96);
-}
-
-function scoreOfficialConfidence(row: OfficialTimelineRow) {
-  let score = row.url.startsWith("https://") ? 64 : 50;
-  if (containsAny(row.source, ["agency", "cal fire", "nws", "county", "official"])) score += 24;
-  return Math.min(score, 98);
-}
-
-function extractTags(text: string) {
-  const tagRules = [
-    ["route", ["road", "route", "corridor", "traffic", "congestion", "closure"]],
-    ["smoke", ["smoke", "column", "thermal", "fire"]],
-    ["warning", ["warning", "evacuation", "order"]],
-    ["assistance", ["mobility", "elderly", "medical", "transport", "assistance"]]
+function categorizeSourceText(text: string): SourceRowCategory[] {
+  const categoryRules: Array<[SourceRowCategory, string[]]> = [
+    ["route_reference", ["road", "route", "corridor", "traffic", "congestion", "closure", "closed", "blocked"]],
+    ["hazard_reference", ["smoke", "column", "thermal", "fire", "spread", "wind"]],
+    ["official_notice_reference", ["warning", "evacuation", "order"]],
+    ["assistance_reference", ["mobility", "elderly", "medical", "transport", "assistance"]]
   ] as const;
 
-  return tagRules.filter(([, terms]) => containsAny(text, [...terms])).map(([tag]) => tag);
+  return categoryRules.filter(([, terms]) => containsAny(text, terms)).map(([category]) => category);
 }
 
-export function normalizeOfficialRows(rows: OfficialTimelineRow[]): NormalizedSignalRow[] {
+export function normalizeOfficialRows(rows: OfficialTimelineRow[]): NormalizedSourceRow[] {
   return rows.map((row) => ({
     time: row.time,
     source: row.source,
-    routeStress: scoreRouteStress(row.text),
-    spread: scoreSpread(row.text),
-    officialConfidence: scoreOfficialConfidence(row),
-    tags: extractTags(row.text)
+    sourceText: row.text,
+    sourceUrl: row.url,
+    categories: categorizeSourceText(row.text)
   }));
 }

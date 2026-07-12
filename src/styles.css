@@ -1,8 +1,10 @@
+@import "leaflet/dist/leaflet.css";
+
 :root {
   color-scheme: dark;
   --ink: #f4efe6;
   --muted: #b8afa4;
-  --faint: #7d746b;
+  --faint: #9d9388;
   --charcoal: #111210;
   --charcoal-2: #171714;
   --panel: rgba(20, 21, 19, 0.78);
@@ -30,7 +32,6 @@ html {
 body {
   margin: 0;
   min-width: 320px;
-  overflow-x: hidden;
   background: var(--charcoal);
   color: var(--ink);
   font-family: Geist, Satoshi, "Avenir Next", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -162,11 +163,6 @@ main {
   transition: color 180ms ease, transform 180ms ease;
 }
 
-.nav-links a:hover {
-  color: var(--ink);
-  transform: translateY(-1px);
-}
-
 .hero-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(320px, 460px);
@@ -174,6 +170,29 @@ main {
   align-items: end;
   min-height: calc(100dvh - 100px);
   padding-top: clamp(64px, 12vh, 130px);
+}
+
+.hero-layout > *,
+.workspace-hero > *,
+.ops-grid > *,
+.lower-grid > *,
+.offline-grid > *,
+.panel-header > *,
+.event-details,
+.failure-copy {
+  min-width: 0;
+}
+
+.connector-card,
+.live-source-row,
+.live-signal,
+.engine-proof,
+.source-summary,
+.memory-card,
+.failure-card,
+.historical-map-provenance,
+.evaluation-table-wrap {
+  overflow-wrap: anywhere;
 }
 
 .hero-content {
@@ -262,13 +281,6 @@ h1 {
   color: var(--muted);
 }
 
-.primary-cta:hover,
-.ghost-cta:hover,
-.icon-button:hover,
-.input-row button:hover {
-  transform: translateY(-1px);
-}
-
 .primary-cta:active,
 .ghost-cta:active,
 .icon-button:active,
@@ -344,6 +356,20 @@ h1 {
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.5;
+}
+
+.location-form .form-status {
+  padding: 8px 10px;
+  border: 1px solid rgba(136, 174, 202, 0.24);
+  border-radius: 6px;
+  background: rgba(136, 174, 202, 0.08);
+}
+
+.location-form .form-status.error,
+.memory-persistence.error {
+  border-color: rgba(232, 93, 75, 0.38);
+  background: rgba(232, 93, 75, 0.1);
+  color: #ffc3b7;
 }
 
 .hero-metrics {
@@ -613,11 +639,6 @@ h1 {
   background: rgba(216, 111, 61, 0.13);
 }
 
-.incident-card:hover,
-.event-card:hover {
-  transform: translateY(-1px);
-}
-
 .source-summary {
   margin-top: 12px;
   padding: 13px;
@@ -636,12 +657,19 @@ h1 {
 .live-signal p,
 .evidence-chain p,
 .failure-card p,
+.failure-description,
 .memory-card p,
-.event-card p {
+.event-card p,
+.event-meta {
   margin-bottom: 0;
   color: var(--muted);
   font-size: 0.84rem;
   line-height: 1.48;
+}
+
+.event-meta,
+.failure-description {
+  display: block;
 }
 
 .connector-card small {
@@ -675,6 +703,191 @@ h1 {
   border: 1px solid rgba(244, 239, 230, 0.13);
   border-radius: 8px;
   background: #1b1c18;
+}
+
+.historical-map {
+  display: grid;
+  gap: 10px;
+}
+
+.historical-map-canvas {
+  min-height: 500px;
+  overflow: hidden;
+  border: 1px solid rgba(244, 239, 230, 0.13);
+  border-radius: 8px;
+  background: #1b1c18;
+}
+
+.historical-map-canvas .leaflet-tile-pane {
+  filter: saturate(0.62) contrast(1.02) brightness(0.72);
+}
+
+.historical-map-canvas .leaflet-control-attribution,
+.historical-map-canvas .leaflet-popup-content-wrapper,
+.historical-map-canvas .leaflet-popup-tip,
+.historical-map-canvas .leaflet-tooltip {
+  background: rgba(17, 18, 16, 0.94);
+  color: var(--ink);
+}
+
+.historical-map-canvas .leaflet-control-attribution a {
+  color: var(--amber);
+}
+
+.historical-marker {
+  border: 0;
+  background: transparent;
+}
+
+.historical-marker-glyph,
+.legend-marker {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 2px solid rgba(244, 239, 230, 0.9);
+  border-radius: 50%;
+  background: var(--charcoal-2);
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 900;
+  box-shadow: 0 3px 16px rgba(5, 6, 5, 0.55);
+}
+
+.historical-marker-glyph.active {
+  border-color: var(--amber);
+  background: var(--ember);
+}
+
+.historical-map-legend,
+.historical-map-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.historical-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.historical-map-legend .legend-marker {
+  width: 22px;
+  height: 22px;
+}
+
+.historical-map-provenance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.historical-map-provenance div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(244, 239, 230, 0.045);
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.historical-map-provenance strong,
+.historical-map-provenance a {
+  color: var(--amber);
+}
+
+.historical-map-provenance small {
+  color: var(--faint);
+}
+
+.evaluation-panel {
+  max-width: 1440px;
+  margin: 16px auto 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 90px rgba(5, 6, 5, 0.2);
+}
+
+.evaluation-intro {
+  max-width: 920px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.evaluation-table-wrap {
+  overflow-x: auto;
+}
+
+.evaluation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.evaluation-table th,
+.evaluation-table td {
+  min-width: 150px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.evaluation-table thead th {
+  color: var(--amber);
+  background: rgba(216, 111, 61, 0.08);
+}
+
+.evaluation-table tbody th span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.negative-control {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.5fr) minmax(280px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(244, 239, 230, 0.045);
+}
+
+.negative-control div {
+  display: grid;
+  gap: 4px;
+}
+
+.negative-control span,
+.negative-control a {
+  color: var(--amber);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.negative-control p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .osm-grid {
@@ -931,7 +1144,7 @@ h1 {
 }
 
 .event-title,
-.failure-card h4,
+.failure-title,
 .memory-card h4 {
   display: block;
   margin: 0 0 6px;
@@ -1020,11 +1233,6 @@ h1 {
   transition: transform 180ms ease, border-color 180ms ease;
 }
 
-.live-signal:hover {
-  transform: translateY(-1px);
-  border-color: rgba(232, 173, 103, 0.46);
-}
-
 .severity-warning,
 .severity-critical {
   border-color: rgba(232, 93, 75, 0.38);
@@ -1056,20 +1264,39 @@ h1 {
   transition: transform 180ms ease, border-color 180ms ease;
 }
 
-.evidence-chain a:hover {
-  transform: translateY(-1px);
-  border-color: rgba(232, 173, 103, 0.48);
+.source-link-unavailable {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: rgba(244, 239, 230, 0.035);
+}
+
+.source-link-unavailable p {
+  margin-bottom: 0;
+  font-size: 0.84rem;
+  line-height: 1.48;
 }
 
 .failure-card {
   padding: 12px;
 }
 
-.failure-card label {
+.memory-confirm-label {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   cursor: pointer;
+}
+
+.memory-edit-label {
+  display: block;
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 820;
 }
 
 .failure-card input {
@@ -1092,6 +1319,31 @@ h1 {
 
 .failure-card textarea:focus {
   border-color: rgba(232, 173, 103, 0.62);
+}
+
+.memory-storage-note,
+.memory-persistence {
+  margin: 10px 0 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: rgba(244, 239, 230, 0.035);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+
+.memory-actions .icon-button {
+  min-height: 40px;
+  padding-inline: 12px;
+  font-size: 0.78rem;
 }
 
 .memory-card {
@@ -1221,6 +1473,11 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .historical-map-provenance,
+  .negative-control {
+    grid-template-columns: 1fr;
+  }
+
   .input-row {
     grid-template-columns: 1fr;
   }
@@ -1253,9 +1510,36 @@ h1 {
   }
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .nav-links a:hover {
+    color: var(--ink);
+    transform: translateY(-1px);
+  }
+
+  .primary-cta:hover,
+  .ghost-cta:hover,
+  .icon-button:hover,
+  .input-row button:hover,
+  .incident-card:hover,
+  .event-card:hover,
+  .live-signal:hover,
+  .evidence-chain a:hover {
+    transform: translateY(-1px);
+  }
+
+  .live-signal:hover,
+  .evidence-chain a:hover {
+    border-color: rgba(232, 173, 103, 0.48);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  #emberCanvas {
+    display: none;
   }
 
   *,

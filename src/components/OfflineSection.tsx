@@ -2,12 +2,12 @@ const phases = [
   {
     index: "01",
     title: "Before",
-    copy: "Cache official alerts, old route failures, medications, shelter notes, and household assistance needs."
+    copy: "Review official alerts, old route failures, shelter notes, and non-sensitive preparedness checklists."
   },
   {
     index: "02",
     title: "During",
-    copy: "Compare live signals against the historical failure chain before roads, power, or signal degrade."
+    copy: "Monitor current public signals without attaching them to historical route advice or evacuation timing."
   },
   {
     index: "03",
@@ -23,8 +23,8 @@ export function OfflineSection() {
         <p className="signal-label">Before, during, after</p>
         <h2 id="offline-title">The product is not another alert dashboard. It is memory that operates.</h2>
         <p>
-          The point is not to predict a perfect minute. It is to recognize the pattern early enough that a household has a simpler decision before
-          the same bottleneck repeats.
+          The point is not to predict a perfect minute. Current monitoring stays separate from official-row historical lessons that a household can
+          preserve before the same bottleneck repeats.
         </p>
       </div>
       <div className="offline-grid">

@@ -2,16 +2,20 @@ import type { FormEvent } from "react";
 import { EmberCanvas } from "./EmberCanvas";
 
 type HeroProps = {
+  error: string;
+  historicalRowCount: number;
   incidentCount: number;
   liveSourceCount: number;
   locationInput: string;
-  searchStatus: "idle" | "loading" | "ready";
+  searchStatus: "idle" | "loading" | "ready" | "error";
   onLocationChange: (value: string) => void;
   onLocationSearch: () => void;
   onReplayStart: () => void;
 };
 
 export function Hero({
+  error,
+  historicalRowCount,
   incidentCount,
   liveSourceCount,
   locationInput,
@@ -24,6 +28,15 @@ export function Hero({
     event.preventDefault();
     onLocationSearch();
   }
+
+  const searchMessage =
+    searchStatus === "loading"
+      ? "Checking the named public sources. Previous results are hidden until this request finishes."
+      : searchStatus === "error"
+        ? error || "The area search could not be completed."
+        : searchStatus === "ready"
+          ? `${incidentCount} current incident record${incidentCount === 1 ? "" : "s"} loaded.`
+          : "No area checked yet.";
 
   return (
     <section className="hero" aria-labelledby="hero-title">
@@ -45,9 +58,9 @@ export function Hero({
       <div className="hero-layout" id="top">
         <div className="hero-content">
           <p className="signal-label">Disaster memory engine</p>
-          <h1 id="hero-title">Turn past evacuations into live decisions.</h1>
+          <h1 id="hero-title">Turn past evacuations into household memory.</h1>
           <p className="hero-copy">
-            Enter a location, load nearby fire records, replay the official signal chain, and convert what failed into a household plan.
+            Check current public sources, then separately replay verified Palisades and Eaton rows to preserve what a household should remember.
           </p>
           <div className="hero-actions">
             <button className="primary-cta" type="button" onClick={onReplayStart}>
@@ -62,33 +75,44 @@ export function Hero({
         <aside className="search-console" aria-label="Location fire lookup">
           <div className="console-header">
             <span>Location intelligence</span>
-            <strong>{searchStatus === "loading" ? "Searching" : `${incidentCount} records`}</strong>
+            <strong>{searchStatus === "loading" ? "Searching" : searchStatus === "error" ? "Search failed" : `${incidentCount} records`}</strong>
           </div>
           <form onSubmit={handleSubmit} className="location-form">
             <label htmlFor="locationInput">Home base</label>
             <div className="input-row">
               <input
                 id="locationInput"
+                type="search"
                 value={locationInput}
                 onChange={(event) => onLocationChange(event.target.value)}
                 placeholder="Pacific Palisades, CA"
+                autoComplete="off"
+                maxLength={100}
+                aria-describedby="locationPrivacyHint locationSearchStatus"
+                aria-invalid={searchStatus === "error"}
               />
-              <button type="submit">{searchStatus === "loading" ? "Checking" : "Find fires"}</button>
+              <button type="submit" disabled={searchStatus === "loading"}>{searchStatus === "loading" ? "Checking" : "Find fires"}</button>
             </div>
-            <p>Matches are ranked by proximity, official timestamps, map coverage, and incident-review depth.</p>
+            <p id="locationPrivacyHint">
+              City, ZIP code, or neighborhood only—not a street address. Your area is sent to OpenStreetMap Nominatim; derived coordinates are sent to NIFC, NWS, and NASA EONET.
+            </p>
+            <p id="locationSearchStatus" className={searchStatus === "error" ? "form-status error" : "form-status"} role={searchStatus === "error" ? "alert" : "status"} aria-live={searchStatus === "error" ? "assertive" : "polite"}>
+              {searchMessage}
+            </p>
+            <p>Current incident records are sorted by distance from the matched coarse area. Source timestamps and health are shown separately.</p>
           </form>
           <div className="hero-metrics" aria-label="Active signal summary">
             <span>
-              <strong>5</strong>
-              timestamp rows
+              <strong>{historicalRowCount}</strong>
+              verified rows
             </span>
             <span>
               <strong>{liveSourceCount}</strong>
-              live sources
+              usable sources
             </span>
             <span>
-              <strong>30m</strong>
-              mobility buffer
+              <strong>2</strong>
+              verified cases
             </span>
           </div>
         </aside>

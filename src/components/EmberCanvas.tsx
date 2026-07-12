@@ -54,7 +54,8 @@ export function EmberCanvas() {
 
     const currentCanvas = canvas;
     const currentContext = context;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let reducedMotion = motionPreference.matches;
     const particles = createParticles(reducedMotion);
     let frameId = 0;
 
@@ -106,12 +107,21 @@ export function EmberCanvas() {
       if (!reducedMotion) frameId = requestAnimationFrame(drawFrame);
     }
 
+    function handleMotionPreferenceChange(event: MediaQueryListEvent) {
+      reducedMotion = event.matches;
+      cancelAnimationFrame(frameId);
+      frameId = 0;
+      drawFrame();
+    }
+
     window.addEventListener("resize", resize);
+    motionPreference.addEventListener("change", handleMotionPreferenceChange);
     resize();
     drawFrame();
 
     return () => {
       window.removeEventListener("resize", resize);
+      motionPreference.removeEventListener("change", handleMotionPreferenceChange);
       cancelAnimationFrame(frameId);
     };
   }, []);

@@ -1,173 +1,137 @@
-import type { ReplayEvent } from "../data/replay";
+import type { HistoricalEvent, OfficialSignal, RouteOption } from "../data/replay";
 
-export type RiskLevel = "low" | "medium" | "high";
-export type DecisionMode = "prepare" | "leave_now" | "review";
+const RECOGNIZED_HISTORICAL_SOURCES = new Map([
+  [
+    "https://docs.google.com/spreadsheets/d/1Xna6okyL59bk3m6oHphZrN-RWWxOtnBIL0R5EpaZ__4/edit",
+    new Set(["FSRI Palisades worksheet", "FSRI Eaton worksheet"])
+  ],
+  ["https://file.lacounty.gov/SDSInter/lac/1191567_EatonFireTimelineOverview.pdf", new Set(["LA County Eaton timeline overview"])]
+]);
 
-export type HouseholdProfile = {
-  label: string;
-  mobilityBufferMinutes: number;
-  primaryRoute: string;
-  backupRoutes: string[];
+export type HistoricalDecisionMode = "prepare" | "official_action";
+
+export type HistoricalDecision = {
+  eventId: string;
+  timestamp: string;
+  mode: HistoricalDecisionMode;
+  officialSignal: OfficialSignal;
+  primaryRouteMemory: RouteOption;
+  alternateRouteMemory: RouteOption;
+  triggerSummary: string;
 };
 
-export type RouteStatus = "available" | "watched" | "degraded";
-
-export type RouteChoice = {
-  name: string;
-  status: RouteStatus;
-  reason: string;
-};
-
-export type EvidenceTrailItem = {
-  rule: "hazard_movement" | "route_stress" | "official_source" | "assistance_pressure" | "recovery";
-  time: string;
-  source: string;
-  detail: string;
-  weight: number;
-};
-
-export type DetectorDecision = {
-  time: string;
-  mode: DecisionMode;
-  routeClosureRisk: RiskLevel;
-  backupOverloadRisk: RiskLevel;
-  leaveBeforeSignal: string;
-  mobilityBufferMinutes: number;
-  primaryRoute: RouteChoice;
-  backupRoutes: RouteChoice[];
-  recommendedRoute: RouteChoice;
-  detectedFailureIds: string[];
-  evidenceTrail: EvidenceTrailItem[];
-  score: number;
-};
-
-export const defaultHouseholdProfile: HouseholdProfile = {
-  label: "Elderly resident living alone",
-  mobilityBufferMinutes: 30,
-  primaryRoute: "Ridge road",
-  backupRoutes: ["Valley connector", "Canyon shelter spur"]
-};
-
-function clampScore(score: number) {
-  return Math.max(0, Math.min(100, Math.round(score)));
+function getRoute(event: HistoricalEvent, routeId: string, role: string) {
+  const route = event.routePlan.routes.find((candidate) => candidate.id === routeId);
+  if (!route) throw new Error(`Missing ${role} route memory: ${routeId}`);
+  return { ...route };
 }
 
-function riskFromScore(score: number): RiskLevel {
-  if (score >= 70) return "high";
-  if (score >= 38) return "medium";
-  return "low";
+function isOfficialAction(signal: OfficialSignal) {
+  return signal === "evacuation_warning" || signal === "evacuation_order";
 }
 
-function hasAssistancePressure(event: ReplayEvent) {
-  return event.failures.some((failure) => failure.id === "help-need") || event.signal.toLowerCase().includes("mobility");
+function recognizedSource(sourceUrl: string, sourceLabel: string) {
+  try {
+    const url = new URL(sourceUrl);
+    return (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      RECOGNIZED_HISTORICAL_SOURCES.get(url.toString())?.has(sourceLabel) === true
+    );
+  } catch {
+    return false;
+  }
 }
 
-function buildEvidenceTrail(event: ReplayEvent): EvidenceTrailItem[] {
-  const trail: EvidenceTrailItem[] = [];
+function officialTimeParts(value: string) {
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+  if (!match) return null;
 
-  if (event.spread >= 45 || event.risk === "warning" || event.risk === "critical") {
-    trail.push({
-      rule: "hazard_movement",
-      time: event.time,
-      source: event.source,
-      detail: `${event.signal}: fire spread signal at ${event.spread}%.`,
-      weight: event.spread
-    });
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const meridiem = match[3]?.toUpperCase();
+  if (minute > 59 || hour > (meridiem ? 12 : 23) || hour < 0) return null;
+  if (meridiem) {
+    if (hour === 12) hour = 0;
+    if (meridiem === "PM") hour += 12;
   }
-
-  if (event.routeStress >= 52) {
-    trail.push({
-      rule: "route_stress",
-      time: event.time,
-      source: event.source,
-      detail: `Route stress reached ${event.routeStress}%.`,
-      weight: event.routeStress
-    });
-  }
-
-  if (event.officialConfidence >= 80) {
-    trail.push({
-      rule: "official_source",
-      time: event.time,
-      source: event.source,
-      detail: `Source confidence is ${event.officialConfidence}% across ${event.evidence.length} evidence cards.`,
-      weight: event.officialConfidence
-    });
-  }
-
-  if (hasAssistancePressure(event)) {
-    trail.push({
-      rule: "assistance_pressure",
-      time: event.time,
-      source: event.source,
-      detail: "Known mobility or neighbor-assistance pressure is active.",
-      weight: 88
-    });
-  }
-
-  if (event.risk === "recovery") {
-    trail.push({
-      rule: "recovery",
-      time: event.time,
-      source: event.source,
-      detail: "The event has moved into review mode; preserve lessons instead of issuing new movement guidance.",
-      weight: 94
-    });
-  }
-
-  return trail;
+  return { hour, minute };
 }
 
-export function detectDecision(event: ReplayEvent, profile: HouseholdProfile = defaultHouseholdProfile): DetectorDecision {
-  const evidenceTrail = buildEvidenceTrail(event);
-  const hazardWeight = event.spread * 0.38;
-  const routeWeight = event.routeStress * 0.44;
-  const sourceWeight = event.officialConfidence * 0.18;
-  const score = clampScore(hazardWeight + routeWeight + sourceWeight);
-  const stackedRouteFailure = event.spread >= 60 && event.routeStress >= 68 && event.officialConfidence >= 85;
-  const routeClosureRisk = event.risk === "recovery" ? "medium" : stackedRouteFailure ? "high" : riskFromScore(score);
-  const assistancePressure = hasAssistancePressure(event);
-  const backupOverloadRisk: RiskLevel =
-    event.risk === "recovery" ? "medium" : event.routeStress >= 80 && assistancePressure ? "high" : event.routeStress >= 68 ? "medium" : "low";
-  const mode: DecisionMode = event.risk === "recovery" ? "review" : routeClosureRisk === "high" ? "leave_now" : "prepare";
-  const primaryRoute: RouteChoice = {
-    name: profile.primaryRoute,
-    status: routeClosureRisk === "high" ? "degraded" : routeClosureRisk === "medium" ? "watched" : "available",
-    reason:
-      routeClosureRisk === "high"
-        ? "Hazard movement, route stress, and official-source confidence are stacked."
-        : "The primary route remains usable only while source checks stay below the leave-before threshold."
-  };
-  const backupRoutes: RouteChoice[] = profile.backupRoutes.map((route, index) => ({
-    name: route,
-    status: backupOverloadRisk === "high" && index === 0 ? "watched" : "available",
-    reason:
-      backupOverloadRisk === "high" && index === 0
-        ? "Backup pressure is rising because assistance needs and congestion are active together."
-        : "Still available under the current source chain."
-  }));
-  const recommendedRoute = routeClosureRisk === "high" ? backupRoutes[0] : primaryRoute;
-  const leaveBeforeSignal =
-    event.risk === "recovery"
-      ? "Review the route and assistance cards before fire season."
-      : `Leave before route stress reaches ${Math.max(event.routeStress, 68)}% again while smoke movement and official warning signals are active.`;
+function recordMatchesTimestamp(event: HistoricalEvent) {
+  const instant = new Date(event.timestamp);
+  if (Number.isNaN(instant.getTime())) return false;
+
+  const date = new Intl.DateTimeFormat("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "America/Los_Angeles"
+  }).format(instant);
+  const displayTime = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "America/Los_Angeles"
+  }).format(instant);
+  const timeParts = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: "America/Los_Angeles"
+  }).formatToParts(instant);
+  const timestampHour = Number(timeParts.find((part) => part.type === "hour")?.value);
+  const timestampMinute = Number(timeParts.find((part) => part.type === "minute")?.value);
+  const recordTime = officialTimeParts(event.officialRecord.eventTime);
+
+  return (
+    date === event.officialRecord.eventDate &&
+    displayTime === event.displayTime &&
+    recordTime?.hour === timestampHour &&
+    recordTime.minute === timestampMinute
+  );
+}
+
+function recordSupportsSignal(event: HistoricalEvent) {
+  const text = event.officialRecord.eventDescription;
+  if (event.officialSignal === "evacuation_warning") return /\bevacuation warnings?\b/i.test(text);
+  if (event.officialSignal === "evacuation_order") return /\bevacuation order\b/i.test(text);
+  return false;
+}
+
+function hasVerifiedOfficialAction(event: HistoricalEvent) {
+  const record = event.officialRecord;
+  return (
+    isOfficialAction(event.officialSignal) &&
+    recognizedSource(event.sourceUrl, event.sourceLabel) &&
+    record.sourceDescription.trim().length > 0 &&
+    record.incidentName.trim().length > 0 &&
+    record.eventDescription.trim().length > 0 &&
+    event.sourceText === record.eventDescription &&
+    recordMatchesTimestamp(event) &&
+    recordSupportsSignal(event)
+  );
+}
+
+export function evaluateHistoricalEvent(event: HistoricalEvent): HistoricalDecision {
+  const officialAction = hasVerifiedOfficialAction(event);
 
   return {
-    time: event.time,
-    mode,
-    routeClosureRisk,
-    backupOverloadRisk,
-    leaveBeforeSignal,
-    mobilityBufferMinutes: profile.mobilityBufferMinutes,
-    primaryRoute,
-    backupRoutes,
-    recommendedRoute,
-    detectedFailureIds: event.failures.map((failure) => failure.id),
-    evidenceTrail,
-    score
+    eventId: event.id,
+    timestamp: event.timestamp,
+    mode: officialAction ? "official_action" : "prepare",
+    officialSignal: event.officialSignal,
+    primaryRouteMemory: getRoute(event, event.routePlan.primaryRouteId, "primary"),
+    alternateRouteMemory: getRoute(event, event.routePlan.backupRouteId, "alternate"),
+    triggerSummary: officialAction
+      ? "This historical row contains an official warning or order. It is not current guidance."
+      : isOfficialAction(event.officialSignal)
+        ? "This claimed warning or order could not be verified against its historical source record. It is not an evacuation instruction."
+        : "This historical row is descriptive context, not an evacuation instruction."
   };
 }
 
-export function replayDecisionSeries(events: ReplayEvent[], profile: HouseholdProfile = defaultHouseholdProfile) {
-  return events.map((event) => detectDecision(event, profile));
+export function evaluateScenario(events: HistoricalEvent[]) {
+  return events.map(evaluateHistoricalEvent);
 }

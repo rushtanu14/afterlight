@@ -1,10 +1,27 @@
-import type { IncidentOption } from "../data/replay";
-
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 export type LiveSourceId = "nominatim" | "nifc" | "nws" | "eonet" | "firms";
 export type LiveSourceStatus = "live" | "quiet" | "limited" | "error" | "optional";
 export type LiveSignalSeverity = "watch" | "warning" | "critical";
+
+export type LiveIncident = {
+  id: string;
+  name: string;
+  location: string;
+  distance: string;
+  started: string;
+  updated: string;
+  confidence: string;
+  summary: string;
+  sources: Array<{ label: string; detail: string; url: string }>;
+  sourceId: "nifc" | "eonet";
+  latitude: number;
+  longitude: number;
+  acres?: number;
+  containment: number | null;
+  lastUpdated: string;
+  feedUrl: string;
+};
 
 export type LiveLocation = {
   label: string;
@@ -36,7 +53,7 @@ export type LiveSourceState = {
 
 export type LiveIncidentBundle = {
   location: LiveLocation | null;
-  incidents: IncidentOption[];
+  incidents: LiveIncident[];
   signals: LiveSignal[];
   sourceStates: LiveSourceState[];
   checkedAt: string;
@@ -44,12 +61,11 @@ export type LiveIncidentBundle = {
 
 export type LiveSourceOptions = {
   fetcher?: FetchLike;
-  firmsMapKey?: string;
   now?: Date;
 };
 
 type SourceResult = {
-  incidents: IncidentOption[];
+  incidents: LiveIncident[];
   signals: LiveSignal[];
   state: LiveSourceState;
 };
@@ -74,15 +90,130 @@ const NIFC_LAYER_URL =
 const NWS_ALERTS_BASE_URL = "https://api.weather.gov/alerts/active";
 const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const EONET_EVENTS_URL = "https://eonet.gsfc.nasa.gov/api/v3/events";
-const FIRMS_AREA_BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv";
+const FIRMS_API_URL = "https://firms.modaps.eosdis.nasa.gov/api/";
+const OFFICIAL_SOURCE_HOSTS = new Set([
+  "earthobservatory.nasa.gov",
+  "eonet.gsfc.nasa.gov",
+  "firms.modaps.eosdis.nasa.gov",
+  "gdacs.org",
+  "inciweb.wildfire.gov",
+  "irwin.doi.gov",
+  "www.gdacs.org"
+]);
+const COARSE_NOMINATIM_TYPES = new Set([
+  "administrative",
+  "borough",
+  "city",
+  "city_district",
+  "county",
+  "municipality",
+  "neighbourhood",
+  "postcode",
+  "state",
+  "suburb",
+  "town",
+  "village"
+]);
 
 class SourceFetchError extends Error {
+  readonly sourceId: LiveSourceId;
   readonly status: number;
 
-  constructor(message: string, status: number) {
-    super(message);
+  constructor(sourceId: LiveSourceId, status: number) {
+    super(`${sourceId} request failed.`);
+    this.sourceId = sourceId;
     this.status = status;
   }
+}
+
+export type AreaQueryValidation = { ok: true; query: string } | { ok: false; message: string };
+
+const AREA_QUERY_MESSAGE = "Enter a city, ZIP code, or neighborhood, not a street address.";
+const STREET_DESIGNATOR =
+  "street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way|place|pl|highway|hwy|trail|trl|terrace|ter|circle|cir|loop|rue|calle|camino|via|strada|straße|strasse|chemin|route|rua|avenida";
+const HOUSE_NUMBER = "\\d{1,6}[a-z]?(?:[-/]\\d{1,6}[a-z]?)?";
+const STREET_ADDRESS_PATTERN = new RegExp(
+  `(?:^${HOUSE_NUMBER}\\s+.*\\b(?:${STREET_DESIGNATOR})\\b|\\b(?:${STREET_DESIGNATOR})\\b.+\\s${HOUSE_NUMBER}(?:\\s|,|$))`,
+  "i"
+);
+const LEADING_HOUSE_NUMBER_PATTERN = new RegExp("^" + HOUSE_NUMBER + "\\s+\\S", "i");
+const COORDINATE_PAIR_PATTERN = /^[+-]?\d{1,2}(?:\.\d+)?\s*,\s*[+-]?\d{1,3}(?:\.\d+)?$/;
+
+export function validateAreaQuery(query: string): AreaQueryValidation {
+  const normalized = query.trim();
+  const hasControlCharacters = /[\u0000-\u001f\u007f]/.test(normalized);
+  const hasUnitDesignator = /\b(?:apartment|apt|suite|unit)\s*[#-]?\s*\w+/i.test(normalized);
+  const hasLeadingHouseNumber = LEADING_HOUSE_NUMBER_PATTERN.test(normalized);
+
+  if (
+    normalized.length < 2 ||
+    normalized.length > 100 ||
+    hasControlCharacters ||
+    hasUnitDesignator ||
+    hasLeadingHouseNumber ||
+    STREET_ADDRESS_PATTERN.test(normalized) ||
+    COORDINATE_PAIR_PATTERN.test(normalized)
+  ) {
+    return { ok: false, message: AREA_QUERY_MESSAGE };
+  }
+
+  return { ok: true, query: normalized };
+}
+
+type GeocoderRequestState = {
+  cache: Map<string, LiveLocation>;
+  nextRequestAt: number;
+  tail: Promise<void>;
+};
+
+const NOMINATIM_MIN_INTERVAL_MS = 1_000;
+const MAX_GEOCODE_CACHE_ENTRIES = 25;
+const geocoderRequestStates = new WeakMap<FetchLike, GeocoderRequestState>();
+
+function geocoderStateFor(fetcher: FetchLike) {
+  const existing = geocoderRequestStates.get(fetcher);
+  if (existing) return existing;
+
+  const created: GeocoderRequestState = {
+    cache: new Map(),
+    nextRequestAt: 0,
+    tail: Promise.resolve()
+  };
+  geocoderRequestStates.set(fetcher, created);
+  return created;
+}
+
+function normalizedGeocodeCacheKey(query: string) {
+  return query.replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+}
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds));
+}
+
+function cacheGeocode(state: GeocoderRequestState, key: string, location: LiveLocation) {
+  if (state.cache.size >= MAX_GEOCODE_CACHE_ENTRIES) {
+    const oldestKey = state.cache.keys().next().value;
+    if (oldestKey) state.cache.delete(oldestKey);
+  }
+  state.cache.set(key, { ...location });
+}
+
+function safeGeocoderError(error: unknown) {
+  if (error instanceof SourceFetchError) {
+    return error.status === 429 || error.status >= 500
+      ? "Location lookup is rate-limited or temporarily unavailable."
+      : "Location lookup could not be completed.";
+  }
+
+  if (
+    error instanceof Error &&
+    [AREA_QUERY_MESSAGE, "No coarse area match was found. Try a city, ZIP code, or neighborhood.", "The area lookup returned an invalid location."].includes(error.message)
+  ) {
+    return error.message;
+  }
+
+  return "Location lookup could not be completed.";
 }
 
 function defaultFetch(input: string | URL, init?: RequestInit) {
@@ -97,8 +228,50 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function requireArrayField(payload: unknown, field: string) {
+  if (!isRecord(payload) || "error" in payload || !Array.isArray(payload[field])) {
+    throw new Error("The public source returned an invalid payload.");
+  }
+
+  return payload[field];
+}
+
 function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function allowlistedOfficialUrl(value: unknown) {
+  const candidate = stringValue(value);
+  if (!candidate) return null;
+
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" || url.username || url.password || !OFFICIAL_SOURCE_HOSTS.has(url.hostname.toLowerCase())) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isCoarseNominatimResult(result: Record<string, unknown>) {
+  const addressType = stringValue(result.addresstype).toLowerCase();
+  const type = stringValue(result.type).toLowerCase();
+  const address = isRecord(result.address) ? result.address : {};
+  const hasPreciseAddress = ["house_number", "road", "building", "amenity"].some((field) => stringValue(address[field]).length > 0);
+
+  return !hasPreciseAddress && (COARSE_NOMINATIM_TYPES.has(addressType) || COARSE_NOMINATIM_TYPES.has(type));
+}
+
+function coarseAreaLabel(result: Record<string, unknown>, fallback: string) {
+  const address = isRecord(result.address) ? result.address : {};
+  const addressType = stringValue(result.addresstype).toLowerCase();
+  const fields =
+    addressType === "postcode"
+      ? ["postcode", "city", "town", "village", "state"]
+      : ["neighbourhood", "suburb", "city_district", "city", "town", "village", "municipality", "county", "state"];
+  const parts = fields.map((field) => stringValue(address[field])).filter((part, index, values) => part && values.indexOf(part) === index);
+
+  return parts.slice(0, 3).join(", ") || fallback;
 }
 
 function numberValue(value: unknown): number | undefined {
@@ -204,46 +377,63 @@ async function fetchWithTimeout(fetcher: FetchLike, url: string, init: RequestIn
   }
 }
 
-async function readJson(fetcher: FetchLike, url: string, init?: RequestInit) {
+async function readJson(fetcher: FetchLike, sourceId: LiveSourceId, url: string, init?: RequestInit) {
   const response = await fetchWithTimeout(fetcher, url, init);
-  if (!response.ok) throw new SourceFetchError(`${response.status} from ${url}`, response.status);
+  if (!response.ok) throw new SourceFetchError(sourceId, response.status);
   return response.json() as Promise<unknown>;
 }
 
-async function readText(fetcher: FetchLike, url: string, init?: RequestInit) {
-  const response = await fetchWithTimeout(fetcher, url, init);
-  if (!response.ok) throw new SourceFetchError(`${response.status} from ${url}`, response.status);
-  return response.text();
-}
-
 export async function geocodeLocation(query: string, fetcher: FetchLike = defaultFetch): Promise<LiveLocation> {
+  const validation = validateAreaQuery(query);
+  if (validation.ok === false) throw new Error(validation.message);
+
+  const state = geocoderStateFor(fetcher);
+  const cacheKey = normalizedGeocodeCacheKey(validation.query);
+  const cached = state.cache.get(cacheKey);
+  if (cached) return { ...cached };
+
+  const turn = state.tail.then(async () => {
+    const queuedCacheHit = state.cache.get(cacheKey);
+    if (queuedCacheHit) return { ...queuedCacheHit };
+
+    const delay = Math.max(0, state.nextRequestAt - Date.now());
+    if (delay > 0) await wait(delay);
+    state.nextRequestAt = Date.now() + NOMINATIM_MIN_INTERVAL_MS;
+    return null;
+  });
+  state.tail = turn.then(
+    () => undefined,
+    () => undefined
+  );
+  const queuedCacheHit = await turn;
+  if (queuedCacheHit) return queuedCacheHit;
+
   const params = new URLSearchParams({
-    q: query,
+    q: validation.query,
     format: "jsonv2",
-    limit: "1",
+    limit: "5",
     addressdetails: "1"
   });
-  const results = await readJson(fetcher, `${NOMINATIM_SEARCH_URL}?${params.toString()}`, {
+  const results = await readJson(fetcher, "nominatim", `${NOMINATIM_SEARCH_URL}?${params.toString()}`, {
     headers: { Accept: "application/json", "Accept-Language": "en-US" }
   });
 
-  if (!Array.isArray(results) || results.length === 0 || !isRecord(results[0])) {
-    throw new Error(`No geocoding match found for ${query}.`);
-  }
-
-  const first = results[0];
+  const first = Array.isArray(results) ? results.find((result): result is Record<string, unknown> => isRecord(result) && isCoarseNominatimResult(result)) : undefined;
+  if (!first) throw new Error("No coarse area match was found. Try a city, ZIP code, or neighborhood.");
   const latitude = numberValue(first.lat);
   const longitude = numberValue(first.lon);
 
-  if (latitude === undefined || longitude === undefined) {
-    throw new Error(`Geocoding result for ${query} did not include coordinates.`);
+  if (latitude === undefined || longitude === undefined || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    throw new Error("The area lookup returned an invalid location.");
   }
 
-  return {
-    label: stringValue(first.display_name, query),
+  const location = {
+    label: coarseAreaLabel(first, validation.query),
     latitude,
     longitude
   };
+  cacheGeocode(state, cacheKey, location);
+  return { ...location };
 }
 
 function buildNifcUrl(location: LiveLocation) {
@@ -269,10 +459,12 @@ function incidentCoordinates(feature: Record<string, unknown>) {
   const coordinates = Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
   const longitude = numberValue(coordinates[0]);
   const latitude = numberValue(coordinates[1]);
-  return latitude !== undefined && longitude !== undefined ? { latitude, longitude } : null;
+  return latitude !== undefined && longitude !== undefined && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
+    ? { latitude, longitude }
+    : null;
 }
 
-function mapNifcIncident(feature: Record<string, unknown>, location: LiveLocation): IncidentOption | null {
+function mapNifcIncident(feature: Record<string, unknown>, location: LiveLocation): LiveIncident | null {
   const properties = isRecord(feature.properties) ? feature.properties : {};
   const coords = incidentCoordinates(feature);
   if (!coords) return null;
@@ -318,12 +510,12 @@ function mapNifcIncident(feature: Record<string, unknown>, location: LiveLocatio
 
 async function loadNifcIncidents(location: LiveLocation, fetcher: FetchLike, now: Date): Promise<SourceResult> {
   const meta = { id: "nifc" as const, name: "NIFC WFIGS", url: NIFC_LAYER_URL };
-  const payload = await readJson(fetcher, buildNifcUrl(location));
-  const features = isRecord(payload) && Array.isArray(payload.features) ? payload.features : [];
+  const payload = await readJson(fetcher, "nifc", buildNifcUrl(location));
+  const features = requireArrayField(payload, "features");
   const incidents = features
     .filter(isRecord)
     .map((feature) => mapNifcIncident(feature, location))
-    .filter((incident): incident is IncidentOption => incident !== null)
+    .filter((incident): incident is LiveIncident => incident !== null)
     .sort((a, b) => {
       const aDistance = Number.parseFloat(a.distance);
       const bDistance = Number.parseFloat(b.distance);
@@ -377,12 +569,12 @@ function mapNwsSignal(feature: unknown, index: number): LiveSignal | null {
 
 async function loadNwsAlerts(location: LiveLocation, fetcher: FetchLike, now: Date): Promise<SourceResult> {
   const meta = { id: "nws" as const, name: "NWS alerts", url: NWS_ALERTS_BASE_URL };
-  const payload = await readJson(fetcher, buildNwsUrl(location), {
+  const payload = await readJson(fetcher, "nws", buildNwsUrl(location), {
     headers: {
       Accept: "application/geo+json"
     }
   });
-  const features = isRecord(payload) && Array.isArray(payload.features) ? payload.features : [];
+  const features = requireArrayField(payload, "features");
   const signals = features.map(mapNwsSignal).filter((signal): signal is LiveSignal => signal !== null);
 
   return {
@@ -410,9 +602,20 @@ function buildEonetUrl(location: LiveLocation) {
   return `${EONET_EVENTS_URL}?${params.toString()}`;
 }
 
-function mapEonetIncident(event: unknown, location: LiveLocation): IncidentOption | null {
+function mapEonetIncident(event: unknown, location: LiveLocation): LiveIncident | null {
   if (!isRecord(event)) return null;
-  const geometry = Array.isArray(event.geometry) && isRecord(event.geometry[0]) ? event.geometry[0] : null;
+  const geometries = Array.isArray(event.geometry)
+    ? event.geometry
+        .filter(isRecord)
+        .filter((geometry) => {
+          if (!Array.isArray(geometry.coordinates) || !dateValue(geometry.date)) return false;
+          const longitude = numberValue(geometry.coordinates[0]);
+          const latitude = numberValue(geometry.coordinates[1]);
+          return latitude !== undefined && longitude !== undefined && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180;
+        })
+        .sort((a, b) => (dateValue(b.date)?.getTime() ?? 0) - (dateValue(a.date)?.getTime() ?? 0))
+    : [];
+  const geometry = geometries[0];
   if (!geometry || !Array.isArray(geometry.coordinates)) return null;
 
   const longitude = numberValue(geometry.coordinates[0]);
@@ -424,9 +627,13 @@ function mapEonetIncident(event: unknown, location: LiveLocation): IncidentOptio
   const distance = haversineMiles(location, { latitude, longitude });
   const magnitude = numberValue(geometry.magnitudeValue);
   const unit = stringValue(geometry.magnitudeUnit, "acres");
-  const date = stringValue(geometry.date, new Date().toISOString());
-  const sourceUrl =
-    Array.isArray(event.sources) && isRecord(event.sources[0]) ? stringValue(event.sources[0].url, EONET_EVENTS_URL) : EONET_EVENTS_URL;
+  const date = stringValue(geometry.date);
+  const sourceUrl = Array.isArray(event.sources)
+    ? event.sources
+        .filter(isRecord)
+        .map((source) => allowlistedOfficialUrl(source.url))
+        .find((url): url is string => url !== null) ?? EONET_EVENTS_URL
+    : EONET_EVENTS_URL;
 
   return {
     id: `eonet-${id}`,
@@ -456,11 +663,11 @@ function mapEonetIncident(event: unknown, location: LiveLocation): IncidentOptio
 
 async function loadEonetWildfires(location: LiveLocation, fetcher: FetchLike, now: Date): Promise<SourceResult> {
   const meta = { id: "eonet" as const, name: "NASA EONET", url: EONET_EVENTS_URL };
-  const payload = await readJson(fetcher, buildEonetUrl(location));
-  const events = isRecord(payload) && Array.isArray(payload.events) ? payload.events : [];
+  const payload = await readJson(fetcher, "eonet", buildEonetUrl(location));
+  const events = requireArrayField(payload, "events");
   const incidents = events
     .map((event) => mapEonetIncident(event, location))
-    .filter((incident): incident is IncidentOption => incident !== null)
+    .filter((incident): incident is LiveIncident => incident !== null)
     .sort((a, b) => Number.parseFloat(a.distance) - Number.parseFloat(b.distance));
 
   return {
@@ -486,73 +693,6 @@ async function loadEonetWildfires(location: LiveLocation, fetcher: FetchLike, no
   };
 }
 
-function buildFirmsUrl(location: LiveLocation, mapKey: string) {
-  const bbox = boundingBoxAround(location, 60);
-  const area = `${bbox.west.toFixed(4)},${bbox.south.toFixed(4)},${bbox.east.toFixed(4)},${bbox.north.toFixed(4)}`;
-  return `${FIRMS_AREA_BASE_URL}/${encodeURIComponent(mapKey)}/VIIRS_SNPP_NRT/${area}/1`;
-}
-
-function parseCsv(text: string) {
-  const [headerLine, ...rows] = text.trim().split(/\r?\n/);
-  if (!headerLine || rows.length === 0) return [];
-  const headers = headerLine.split(",").map((header) => header.trim());
-
-  return rows.map((row) => {
-    const values = row.split(",");
-    return headers.reduce<Record<string, string>>((record, header, index) => {
-      return { ...record, [header]: values[index]?.trim() ?? "" };
-    }, {});
-  });
-}
-
-function mapFirmsSignal(row: Record<string, string>, index: number): LiveSignal | null {
-  const latitude = numberValue(row.latitude);
-  const longitude = numberValue(row.longitude);
-  if (latitude === undefined || longitude === undefined) return null;
-
-  const time = `${row.acq_date ?? "date unavailable"} ${row.acq_time ?? ""}`.trim();
-  const confidence = stringValue(row.confidence, "unknown confidence");
-
-  return {
-    id: `firms-${index}-${latitude}-${longitude}`,
-    source: "NASA FIRMS",
-    title: "Thermal detection",
-    detail: `VIIRS thermal detection with ${confidence} confidence.`,
-    severity: confidence.toLowerCase().startsWith("h") ? "watch" : "watch",
-    time,
-    url: "https://firms.modaps.eosdis.nasa.gov/api/",
-    latitude,
-    longitude
-  };
-}
-
-async function loadFirmsDetections(location: LiveLocation, fetcher: FetchLike, now: Date, mapKey?: string): Promise<SourceResult> {
-  const meta = { id: "firms" as const, name: "NASA FIRMS", url: "https://firms.modaps.eosdis.nasa.gov/api/" };
-
-  if (!mapKey) {
-    return {
-      incidents: [],
-      signals: [],
-      state: sourceState(meta, "optional", "Thermal detections are available with a free MAP_KEY from NASA FIRMS.", 0, now)
-    };
-  }
-
-  const text = await readText(fetcher, buildFirmsUrl(location, mapKey), { headers: { Accept: "text/csv" } });
-  const signals = parseCsv(text).map(mapFirmsSignal).filter((signal): signal is LiveSignal => signal !== null);
-
-  return {
-    incidents: [],
-    signals,
-    state: sourceState(
-      meta,
-      signals.length > 0 ? "live" : "quiet",
-      signals.length > 0 ? `${signals.length} VIIRS thermal detections in the last day.` : "No FIRMS thermal detections in the search box.",
-      signals.length,
-      now
-    )
-  };
-}
-
 async function safeSource(loader: () => Promise<SourceResult>, meta: SourceMeta, now: Date): Promise<SourceResult> {
   try {
     return await loader();
@@ -562,9 +702,7 @@ async function safeSource(loader: () => Promise<SourceResult>, meta: SourceMeta,
     const detail =
       sourceStatus === "limited"
         ? "The public feed is rate-limited or temporarily unavailable; other sources remain usable."
-        : error instanceof Error
-          ? error.message
-          : "The public feed could not be read.";
+        : `${meta.name} could not be read.`;
 
     return {
       incidents: [],
@@ -574,7 +712,7 @@ async function safeSource(loader: () => Promise<SourceResult>, meta: SourceMeta,
   }
 }
 
-function uniqueIncidents(incidents: IncidentOption[]) {
+function uniqueIncidents(incidents: LiveIncident[]) {
   const seen = new Set<string>();
 
   return incidents.filter((incident) => {
@@ -590,20 +728,33 @@ export async function loadLiveIncidentBundle(query: string, options: LiveSourceO
   const now = options.now ?? new Date();
   const baseCheckedAt = checkedAt(now);
   const geocoderMeta = { id: "nominatim" as const, name: "OpenStreetMap geocoding", url: NOMINATIM_SEARCH_URL };
+  const validation = validateAreaQuery(query);
+
+  if (validation.ok === false) {
+    return {
+      location: null,
+      incidents: [],
+      signals: [],
+      sourceStates: [sourceState(geocoderMeta, "error", validation.message, 0, now)],
+      checkedAt: baseCheckedAt
+    };
+  }
 
   try {
-    const location = await geocodeLocation(query, fetcher);
+    const location = await geocodeLocation(validation.query, fetcher);
     const geocoderState = sourceState(geocoderMeta, "live", "Search text converted into latitude and longitude.", 1, now);
-    const [nifc, nws, eonet, firms] = await Promise.all([
+    const [nifc, nws, eonet] = await Promise.all([
       safeSource(() => loadNifcIncidents(location, fetcher, now), { id: "nifc", name: "NIFC WFIGS", url: NIFC_LAYER_URL }, now),
       safeSource(() => loadNwsAlerts(location, fetcher, now), { id: "nws", name: "NWS alerts", url: NWS_ALERTS_BASE_URL }, now),
-      safeSource(() => loadEonetWildfires(location, fetcher, now), { id: "eonet", name: "NASA EONET", url: EONET_EVENTS_URL }, now),
-      safeSource(
-        () => loadFirmsDetections(location, fetcher, now, options.firmsMapKey),
-        { id: "firms", name: "NASA FIRMS", url: "https://firms.modaps.eosdis.nasa.gov/api/" },
-        now
-      )
+      safeSource(() => loadEonetWildfires(location, fetcher, now), { id: "eonet", name: "NASA EONET", url: EONET_EVENTS_URL }, now)
     ]);
+    const firmsState = sourceState(
+      { id: "firms", name: "NASA FIRMS", url: FIRMS_API_URL },
+      "optional",
+      "NASA FIRMS requires a server proxy; no browser key or request is used.",
+      0,
+      now
+    );
     const incidents = uniqueIncidents([...nifc.incidents, ...eonet.incidents])
       .sort((a, b) => Number.parseFloat(a.distance) - Number.parseFloat(b.distance))
       .slice(0, 8);
@@ -611,8 +762,8 @@ export async function loadLiveIncidentBundle(query: string, options: LiveSourceO
     return {
       location,
       incidents,
-      signals: [...nws.signals, ...eonet.signals, ...firms.signals],
-      sourceStates: [geocoderState, nifc.state, nws.state, eonet.state, firms.state],
+      signals: [...nws.signals, ...eonet.signals],
+      sourceStates: [geocoderState, nifc.state, nws.state, eonet.state, firmsState],
       checkedAt: baseCheckedAt
     };
   } catch (error) {
@@ -624,7 +775,7 @@ export async function loadLiveIncidentBundle(query: string, options: LiveSourceO
         sourceState(
           geocoderMeta,
           "error",
-          error instanceof Error ? error.message : "Location could not be geocoded.",
+          safeGeocoderError(error),
           0,
           now
         )

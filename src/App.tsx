@@ -1,140 +1,356 @@
-import { useEffect, useMemo, useState } from "react";
-import { getAllFailures, incidentOptions, replayEvents } from "./data/replay";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Hero } from "./components/Hero";
 import { OfflineSection } from "./components/OfflineSection";
 import { ReplayWorkspace } from "./components/ReplayWorkspace";
-import { defaultHouseholdProfile, replayDecisionSeries } from "./engine/detector";
+import { SafetyBoundary } from "./components/SafetyBoundary";
+import { getHistoricalScenario, historicalScenarios } from "./data/historicalScenarios";
+import type { HistoricalScenarioId } from "./data/replay";
+import { evaluateScenario } from "./engine/detector";
+import { getJudgeStep, isJudgeMode, JUDGE_RUN_DURATION_MS, type JudgePhase } from "./engine/judgeMode";
 import { loadLiveIncidentBundle, type LiveIncidentBundle } from "./engine/liveSources";
+import { summarizeSourceHealth } from "./engine/sourceConnectors";
+import {
+  clearSavedMemory,
+  clearScenarioMemory,
+  EMPTY_MEMORY_STATE,
+  EMPTY_SCENARIO_MEMORY,
+  loadMemoryState,
+  saveMemoryState,
+  updateScenarioMemory,
+  type MemoryState,
+  type ScenarioMemory
+} from "./engine/memoryStorage";
 
-const firstFailureId = replayEvents[0]?.failures[0]?.id ?? "";
+type SearchStatus = "idle" | "loading" | "ready" | "error";
+type MemoryPersistenceStatus = "idle" | "saved" | "error";
+
+const REDUCED_MOTION_JUDGE_STEPS = [0, 7_500, 30_000, 37_500, 41_250, 45_000, 52_500, 75_000, 82_500, 86_250, 90_000];
+
+function browserPrefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function browserJudgeMode() {
+  return typeof window !== "undefined" && isJudgeMode(window.location.search);
+}
 
 export function App() {
+  const [judgeMode] = useState(browserJudgeMode);
+  const [reducedMotion, setReducedMotion] = useState(browserPrefersReducedMotion);
+  const [selectedScenarioId, setSelectedScenarioId] = useState<HistoricalScenarioId>("palisades-2025");
   const [activeIndex, setActiveIndex] = useState(0);
-  const [confirmedFailures, setConfirmedFailures] = useState<Set<string>>(() => new Set(firstFailureId ? [firstFailureId] : []));
-  const [edits, setEdits] = useState<Record<string, string>>({});
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1700);
+  const [manualPlaying, setManualPlaying] = useState(false);
+  const [judgeRunning, setJudgeRunning] = useState(() => browserJudgeMode() && !browserPrefersReducedMotion());
+  const [judgePhase, setJudgePhase] = useState<JudgePhase | null>(() => (browserJudgeMode() ? "thesis" : null));
+  const [judgeProgress, setJudgeProgress] = useState(0);
+  const [memoryState, setMemoryState] = useState<MemoryState>(loadMemoryState);
+  const [memoryPersistenceStatus, setMemoryPersistenceStatus] = useState<MemoryPersistenceStatus>("idle");
   const [locationInput, setLocationInput] = useState("Pacific Palisades, CA");
-  const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "ready">("ready");
-  const [selectedIncidentId, setSelectedIncidentId] = useState(incidentOptions[0]?.id ?? "");
+  const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
+  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [resultQuery, setResultQuery] = useState("");
   const [liveBundle, setLiveBundle] = useState<LiveIncidentBundle | null>(null);
   const [liveError, setLiveError] = useState("");
+  const requestIdRef = useRef(0);
+  const judgeStartedAtRef = useRef<number | null>(null);
+  const judgeElapsedRef = useRef(0);
 
-  const activeEvent = replayEvents[activeIndex];
-  const decisionSeries = useMemo(() => replayDecisionSeries(replayEvents, defaultHouseholdProfile), []);
-  const activeDecision = decisionSeries[activeIndex];
-  const rankedIncidents = liveBundle?.incidents.length ? liveBundle.incidents : incidentOptions;
-  const selectedIncident = rankedIncidents.find((incident) => incident.id === selectedIncidentId) ?? rankedIncidents[0] ?? incidentOptions[0];
-  const allFailures = useMemo(() => getAllFailures(), []);
-  const memoryCards = useMemo(() => allFailures.filter((failure) => confirmedFailures.has(failure.id)), [allFailures, confirmedFailures]);
+  const selectedScenario = useMemo(() => getHistoricalScenario(selectedScenarioId), [selectedScenarioId]);
+  const decisions = useMemo(() => evaluateScenario(selectedScenario.events), [selectedScenario]);
+  const scenarioMemory = memoryState.scenarios[selectedScenarioId] ?? EMPTY_SCENARIO_MEMORY;
+  const historicalRowCount = historicalScenarios.reduce((total, scenario) => total + scenario.events.length, 0);
+  const usableLiveSourceCount = liveBundle ? summarizeSourceHealth(liveBundle.sourceStates).usable : 0;
 
   useEffect(() => {
-    if (!isPlaying) return undefined;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handleChange = () => {
+      setReducedMotion(media.matches);
+      if (media.matches) {
+        setJudgeRunning(false);
+        setManualPlaying(false);
+      }
+    };
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, []);
 
+  useEffect(() => {
+    if (!manualPlaying || judgeRunning) return undefined;
     const timer = window.setInterval(() => {
       setActiveIndex((currentIndex) => {
-        if (currentIndex >= replayEvents.length - 1) {
-          window.clearInterval(timer);
-          setIsPlaying(false);
+        if (currentIndex >= selectedScenario.events.length - 1) {
+          setManualPlaying(false);
           return currentIndex;
         }
         return currentIndex + 1;
       });
-    }, speed);
-
+    }, 2_400);
     return () => window.clearInterval(timer);
-  }, [isPlaying, speed]);
+  }, [judgeRunning, manualPlaying, selectedScenario.events.length]);
+
+  useEffect(() => {
+    if (!judgeRunning) return undefined;
+    if (judgeStartedAtRef.current === null) judgeStartedAtRef.current = Date.now() - judgeElapsedRef.current;
+
+    const updateJudgeRun = () => {
+      const elapsedMs = Date.now() - (judgeStartedAtRef.current ?? Date.now());
+      judgeElapsedRef.current = elapsedMs;
+      const step = getJudgeStep(elapsedMs);
+
+      if (!step) {
+        const eaton = getHistoricalScenario("eaton-2025");
+        setSelectedScenarioId("eaton-2025");
+        setActiveIndex(Math.max(0, eaton.events.length - 1));
+        setJudgePhase("safety_boundary");
+        setJudgeProgress(100);
+        setJudgeRunning(false);
+        return;
+      }
+
+      setSelectedScenarioId(step.scenarioId);
+      setActiveIndex(step.eventIndex);
+      setJudgePhase(step.phase);
+      setJudgeProgress(step.progressPercent);
+    };
+
+    updateJudgeRun();
+    const timer = window.setInterval(updateJudgeRun, 250);
+    return () => window.clearInterval(timer);
+  }, [judgeRunning]);
+
+  useEffect(() => {
+    if (!judgeRunning || !judgePhase || reducedMotion) return;
+    const targetByPhase: Record<JudgePhase, string> = {
+      thesis: "#historical-thesis",
+      official_rows: "#official-rows",
+      memory_output: "#memory",
+      evaluation: "#evaluation-preview",
+      safety_boundary: "#historical-safety-boundary"
+    };
+    document.querySelector(targetByPhase[judgePhase])?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [judgePhase, judgeRunning, reducedMotion, selectedScenarioId]);
+
+  function commitMemory(nextState: MemoryState) {
+    setMemoryState(nextState);
+    setMemoryPersistenceStatus(saveMemoryState(nextState) ? "saved" : "error");
+  }
+
+  function finishJudgeRun() {
+    const eaton = getHistoricalScenario("eaton-2025");
+    judgeElapsedRef.current = JUDGE_RUN_DURATION_MS;
+    judgeStartedAtRef.current = null;
+    setSelectedScenarioId("eaton-2025");
+    setActiveIndex(Math.max(0, eaton.events.length - 1));
+    setJudgePhase("safety_boundary");
+    setJudgeProgress(100);
+    setJudgeRunning(false);
+  }
+
+  function applyJudgeStep(elapsedMs: number) {
+    const step = getJudgeStep(elapsedMs);
+    if (!step) {
+      finishJudgeRun();
+      return;
+    }
+    judgeElapsedRef.current = elapsedMs;
+    setSelectedScenarioId(step.scenarioId);
+    setActiveIndex(step.eventIndex);
+    setJudgePhase(step.phase);
+    setJudgeProgress(step.progressPercent);
+  }
+
+  function stopPlayback() {
+    setManualPlaying(false);
+    setJudgeRunning(false);
+  }
+
+  function resetJudgeRun(start: boolean) {
+    judgeElapsedRef.current = 0;
+    judgeStartedAtRef.current = start ? Date.now() : null;
+    setSelectedScenarioId("palisades-2025");
+    setActiveIndex(0);
+    setJudgePhase("thesis");
+    setJudgeProgress(0);
+    setManualPlaying(false);
+    setJudgeRunning(start);
+  }
 
   function handleReplayStart() {
-    setSearchStatus("ready");
-    document.querySelector("#replay")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    setIsPlaying(true);
+    document.querySelector("#replay")?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>("#historical-replay-title")?.focus({ preventScroll: true });
+    });
+    if (judgeMode) {
+      resetJudgeRun(!reducedMotion);
+      return;
+    }
+
+    setActiveIndex(0);
+    setManualPlaying(!reducedMotion);
   }
 
   async function handleLocationSearch() {
     const query = locationInput.trim();
-    if (!query) return;
+    if (!query) {
+      setLiveBundle(null);
+      setResultQuery("");
+      setLiveError("Enter a city, ZIP code, or neighborhood.");
+      setSearchStatus("error");
+      return;
+    }
 
+    const requestId = ++requestIdRef.current;
+    setSubmittedQuery(query);
+    setResultQuery("");
+    setLiveBundle(null);
     setSearchStatus("loading");
     setLiveError("");
 
     try {
-      const bundle = await loadLiveIncidentBundle(query, {
-        firmsMapKey: import.meta.env.VITE_FIRMS_MAP_KEY
-      });
+      const bundle = await loadLiveIncidentBundle(query);
+      if (requestId !== requestIdRef.current) return;
       const geocoderError = bundle.sourceStates.find((state) => state.id === "nominatim" && state.status === "error");
       setLiveBundle(bundle);
       setLiveError(geocoderError?.detail ?? "");
-      setSelectedIncidentId(bundle.incidents[0]?.id ?? incidentOptions[0]?.id ?? "");
-    } catch (error) {
-      setLiveError(error instanceof Error ? error.message : "Live sources could not be reached.");
-      setSelectedIncidentId(incidentOptions[0]?.id ?? "");
-    } finally {
-      setSearchStatus("ready");
+      setResultQuery(bundle.location?.label ?? "");
+      setSearchStatus(geocoderError ? "error" : "ready");
+    } catch {
+      if (requestId !== requestIdRef.current) return;
+      setLiveBundle(null);
+      setResultQuery("");
+      setLiveError("Current public sources could not be reached.");
+      setSearchStatus("error");
     }
   }
 
-  function handleSelectEvent(index: number) {
-    setIsPlaying(false);
-    setActiveIndex(index);
-  }
-
-  function handleRestart() {
-    setIsPlaying(false);
+  function handleSelectScenario(scenarioId: HistoricalScenarioId) {
+    stopPlayback();
+    judgeElapsedRef.current = 0;
+    judgeStartedAtRef.current = null;
+    setJudgePhase(judgeMode ? "official_rows" : null);
+    setJudgeProgress(0);
+    setSelectedScenarioId(scenarioId);
     setActiveIndex(0);
   }
 
-  function handleConfirmFailure(id: string, checked: boolean) {
-    setConfirmedFailures((current) => {
-      const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
+  function handleSelectEvent(index: number) {
+    stopPlayback();
+    setJudgePhase(judgeMode ? "official_rows" : null);
+    setActiveIndex(index);
   }
 
-  function handleEditFailure(id: string, value: string) {
-    setEdits((current) => ({ ...current, [id]: value.trim() }));
+  function handleTogglePlay() {
+    if (reducedMotion) {
+      if (!judgeMode) return;
+      const nextElapsed = REDUCED_MOTION_JUDGE_STEPS.find((elapsedMs) => elapsedMs > judgeElapsedRef.current);
+      applyJudgeStep(nextElapsed ?? JUDGE_RUN_DURATION_MS);
+      return;
+    }
+
+    if (judgeMode) {
+      if (judgeRunning) {
+        setJudgeRunning(false);
+        return;
+      }
+      if (judgeElapsedRef.current >= JUDGE_RUN_DURATION_MS) resetJudgeRun(true);
+      else {
+        judgeStartedAtRef.current = Date.now() - judgeElapsedRef.current;
+        setJudgeRunning(true);
+      }
+      return;
+    }
+
+    if (!manualPlaying && activeIndex >= selectedScenario.events.length - 1) setActiveIndex(0);
+    setManualPlaying((playing) => !playing);
+  }
+
+  function handleRestart() {
+    if (judgeMode) {
+      resetJudgeRun(!reducedMotion);
+      return;
+    }
+    setManualPlaying(false);
+    setActiveIndex(0);
+  }
+
+  function handlePrevious() {
+    stopPlayback();
+    setActiveIndex((index) => Math.max(0, index - 1));
+  }
+
+  function handleNext() {
+    stopPlayback();
+    setActiveIndex((index) => Math.min(selectedScenario.events.length - 1, index + 1));
+  }
+
+  function handleConfirm(eventId: string, checked: boolean) {
+    const current = memoryState.scenarios[selectedScenarioId] ?? EMPTY_SCENARIO_MEMORY;
+    const confirmedIds = checked
+      ? Array.from(new Set([...current.confirmedIds, eventId]))
+      : current.confirmedIds.filter((id) => id !== eventId);
+    commitMemory(updateScenarioMemory(memoryState, selectedScenarioId, { ...current, confirmedIds }));
+  }
+
+  function handleEdit(eventId: string, value: string) {
+    const current: ScenarioMemory = memoryState.scenarios[selectedScenarioId] ?? EMPTY_SCENARIO_MEMORY;
+    commitMemory(
+      updateScenarioMemory(memoryState, selectedScenarioId, {
+        ...current,
+        edits: { ...current.edits, [eventId]: value }
+      })
+    );
+  }
+
+  function handleClearScenarioMemory() {
+    commitMemory(clearScenarioMemory(memoryState, selectedScenarioId));
+  }
+
+  function handleClearAllMemory() {
+    setMemoryState({ ...EMPTY_MEMORY_STATE, scenarios: {} });
+    setMemoryPersistenceStatus(clearSavedMemory() ? "saved" : "error");
   }
 
   return (
     <main>
       <Hero
-        incidentCount={rankedIncidents.length}
+        historicalRowCount={historicalRowCount}
+        incidentCount={liveBundle?.incidents.length ?? 0}
+        error={liveError}
         locationInput={locationInput}
         searchStatus={searchStatus}
-        liveSourceCount={liveBundle?.sourceStates.length ?? 6}
+        liveSourceCount={usableLiveSourceCount}
         onLocationChange={setLocationInput}
         onLocationSearch={handleLocationSearch}
         onReplayStart={handleReplayStart}
       />
+      <SafetyBoundary />
       <ReplayWorkspace
-        activeDecision={activeDecision}
-        activeEvent={activeEvent}
         activeIndex={activeIndex}
-        confirmedFailures={confirmedFailures}
-        edits={edits}
-        events={replayEvents}
-        decisionSeries={decisionSeries}
-        incidents={rankedIncidents}
-        isPlaying={isPlaying}
+        autoPlayDisabled={reducedMotion}
+        decisions={decisions}
+        isPlaying={judgeRunning || manualPlaying}
+        judgeMode={judgeMode}
+        judgePhase={judgePhase}
+        judgeProgress={judgeProgress}
+        liveBundle={liveBundle}
         liveError={liveError}
-        liveLocation={liveBundle?.location ?? null}
-        liveSignals={liveBundle?.signals ?? []}
-        liveSourceStates={liveBundle?.sourceStates ?? []}
-        locationInput={locationInput}
-        memoryCards={memoryCards}
+        submittedQuery={submittedQuery}
+        resultQuery={resultQuery}
+        memory={scenarioMemory}
+        memoryPersistenceStatus={memoryPersistenceStatus}
+        scenario={selectedScenario}
+        scenarios={historicalScenarios}
         searchStatus={searchStatus}
-        selectedIncident={selectedIncident}
-        selectedIncidentId={selectedIncidentId}
-        speed={speed}
-        onConfirmFailure={handleConfirmFailure}
-        onEditFailure={handleEditFailure}
+        onConfirm={handleConfirm}
+        onClearAllMemory={handleClearAllMemory}
+        onClearScenarioMemory={handleClearScenarioMemory}
+        onEdit={handleEdit}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
         onRestart={handleRestart}
         onSelectEvent={handleSelectEvent}
-        onSelectIncident={setSelectedIncidentId}
-        onSpeedChange={setSpeed}
-        onTogglePlay={() => setIsPlaying((playing) => !playing)}
+        onSelectScenario={handleSelectScenario}
+        onTogglePlay={handleTogglePlay}
       />
       <OfflineSection />
     </main>

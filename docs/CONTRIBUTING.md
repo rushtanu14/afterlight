@@ -1,11 +1,6 @@
 # Contributing
 
-This project is a Vite + React + TypeScript frontend for Afterlight.
-
-## Prerequisites
-
-- Node.js compatible with Vite 7 and React 19.
-- npm, using the checked-in `package-lock.json`.
+Afterlight is a Vite + React + TypeScript frontend with strict safety and evidence boundaries.
 
 ## Setup
 
@@ -26,18 +21,15 @@ Generated from `package.json`.
 | `npm run dev` | Start the Vite development server on `127.0.0.1`. |
 | `npm run build` | Run TypeScript project build checks, then create the production Vite build in `dist/`. |
 | `npm run preview` | Serve the production build locally with Vite preview on `127.0.0.1`. |
-| `npm run test` | Run the Vitest detector test suite. |
+| `npm run test` | Run the Vitest test suite. |
+| `npm run test:e2e` | Run the mocked-source Playwright browser suite in desktop and mobile Chrome. |
 <!-- AUTO-GENERATED:END scripts -->
 
-## Environment
+## Environment and Secrets
 
-<!-- AUTO-GENERATED:START env -->
-Generated from environment template discovery.
+The browser build uses no API credentials. Do not introduce a FIRMS key or any other credential through a `VITE_` variable: Vite exposes those values to the client. A credentialed provider requires a separate server proxy, secret management, rate controls, and privacy review.
 
-| Variable | Required | Description | Example |
-|----------|----------|-------------|---------|
-| `VITE_FIRMS_MAP_KEY` | No | Optional free NASA FIRMS MAP_KEY for live VIIRS thermal detections. Vite exposes this value in the browser bundle, so use only a rotatable/free key. Leave blank to run the app with Nominatim, NIFC WFIGS, NWS, and EONET only. | `abc123-free-map-key` |
-<!-- AUTO-GENERATED:END env -->
+Keep local environment files ignored. Commit only `.env.example`, and never place real credentials, raw credentialed URLs, or copied provider responses containing sensitive data in source, tests, screenshots, or docs.
 
 ## Source Layout
 
@@ -45,42 +37,66 @@ Generated from environment template discovery.
 Generated from `src/`.
 
 | Path | Purpose |
-|------|---------|
-| `public/images/afterlight-hero.jpg` | Generated cinematic wildfire hero image used by the landing surface. |
-| `src/App.tsx` | Wires replay playback state, confirmed failures, editable lessons, and page sections. |
-| `src/components/EmberCanvas.tsx` | Draws the animated cinematic wildfire hero canvas. |
-| `src/components/Hero.tsx` | Renders the Afterlight entry section and replay CTA. |
-| `src/components/OfflineSection.tsx` | Renders before/during/after offline resilience cards. |
-| `src/components/ReplayWorkspace.tsx` | Renders incident search results, replay controls, OSM-backed map overlays, source connectors, detected failures, and household memory cards. |
-| `src/data/replay.ts` | Defines replay event and failure types plus the curated incident sequence. |
-| `src/engine/detector.ts` | Scores replay signals into route risk, backup overload, leave-before mode, and evidence trails. |
-| `src/engine/liveSources.ts` | Fetches and normalizes free/public live source data from OpenStreetMap Nominatim, NIFC WFIGS, NWS alerts, NASA EONET, and optional NASA FIRMS. |
-| `src/engine/sourceConnectors.ts` | Defines source connector metadata and readiness scoring. |
-| `src/main.tsx` | Mounts the React app into the page. |
-| `src/styles.css` | Contains the full visual system and responsive layout rules. |
+|---|---|
+| `src/App.tsx` | Orchestrates current-source requests, historical playback, judge mode, and scenario memory without crossing surface boundaries. |
+| `src/components/LiveMonitor.tsx` | Displays current public incidents, alerts, and runtime source health without historical output or route advice. |
+| `src/components/HistoricalReplay.tsx` | Displays attributable source rows, categorical action state, historical maps, evaluation, and case memory. |
+| `src/components/HistoricalIncidentMap.tsx` | Renders stored historical road geometry, illustrative anchors, online OSM tiles, and an online ArcGIS perimeter. |
+| `src/components/EvaluationPanel.tsx` | Compares Palisades/Eaton expected action rows and preserves Camp Fire as an unscored negative control. |
+| `src/components/SafetyBoundary.tsx` | Keeps the current-guidance warning beside historical action state. |
+| `src/data/replay.ts` | Defines categorical historical rows, route-memory states, and map provenance types. |
+| `src/data/historicalScenarios.ts` | Stores the two loaded scenario bundles, map snapshots, and archive-only reference. |
+| `src/engine/detector.ts` | Fails closed unless a recognized, internally consistent warning/order row supports `official_action`. |
+| `src/engine/liveSources.ts` | Validates coarse-area input and normalizes Nominatim, NIFC WFIGS, NWS, and EONET responses. |
+| `src/engine/memoryStorage.ts` | Sanitizes and persists versioned scenario confirmations and edits in browser `localStorage`. |
+| `src/engine/judgeMode.ts` | Defines the deterministic 90-second proof schedule. |
+| `src/styles.css` | Contains the charcoal/ember visual system, responsive behavior, and reduced-motion rules. |
 <!-- AUTO-GENERATED:END source-layout -->
 
-## Testing
+## Non-Negotiable Safety Rules
 
-Run detector tests and production build before sharing a submission:
+- Never connect a current incident or alert to historical detector output, route memory, or household cards.
+- Never emit a historical action state without an attributable warning/order row and detector verification.
+- Never add an exact evacuation time, numeric route-risk score, current route recommendation, or fire-spread prediction.
+- Never fabricate a granular timeline for an archive-only incident.
+- Label map points as illustrative unless their provenance changes and is tested.
+- Label stored roads as historical OSM snapshots; do not imply current road status.
+- Keep standard OpenStreetMap tiles online-only. Do not add tile prefetching or offline-map claims.
+- Keep FIRMS server-proxy-only; no browser key or request.
+- Keep displayed external event links fixed or allowlisted HTTPS targets.
+- Preserve the visible safety boundary and reduced-motion behavior.
+
+## Privacy Rules
+
+- Accept only city, ZIP, or neighborhood search input; reject street addresses, units, coordinate pairs, control characters, and oversized values before network access.
+- Remember that the browser shares the area query with Nominatim and the resulting coordinates/bounds with current-source providers.
+- Keep user-facing errors redacted: no API key, raw request URL, exact address, or query-coordinate leakage.
+- Treat `localStorage` memory as untrusted, device-local convenience data—not secure storage.
+- Do not add medical, identity, exact-address, or access-code fields to household memory without a new privacy/security design.
+- Keep scenario updates immutable and scenario-scoped.
+
+## Verification
+
+Before sharing a change:
 
 ```bash
-npm run test
+npm test
 npm run build
+git diff --check
 ```
 
-When adding detector logic, replay calculations, or higher-risk UI behavior, update `tests/detector.test.ts` before relying on manual browser checks alone.
+Run any browser/E2E command present in `package.json` when changing UI, judge mode, accessibility, responsive behavior, maps, or current-source interactions.
 
-## Code Style
+Add or update the focused tests for the boundary you changed:
 
-- Keep TypeScript strictness intact.
-- Keep component state immutable; copy `Set` and object state before updating.
-- Keep source data in `src/data/replay.ts` instead of duplicating replay facts inside components.
-- Avoid hardcoding secrets or API keys. This repository should stay frontend-only unless backend behavior is explicitly added.
+- `tests/detector.test.ts` for warning/order verification and fail-closed behavior.
+- `tests/historicalScenarios.test.ts` for source manifests, maps, and three-case evaluation.
+- `tests/liveSources.test.ts` for query privacy, feed normalization, redacted failures, and source states.
+- `tests/memoryStorage.test.ts` for device-local scenario isolation and sanitization.
+- `tests/judgeMode.test.ts` for deterministic 90-second coverage.
 
-## PR Checklist
+## Documentation and Submission Honesty
 
-- `npm run build` passes.
-- New source-of-truth changes are reflected in generated doc sections.
-- UI changes have been checked at desktop and mobile widths.
-- Emergency/disaster wording does not imply certified official guidance.
+When behavior changes, update `README.md`, `docs/RUNBOOK.md`, `docs/moonshot-paper.md`, `docs/vision-presentation.md`, and `docs/judge-brief.md` as applicable. Do not claim deployment, video, provider reliability, participant outcomes, or human feedback without direct evidence.
+
+**Human validation: Pending — no quote collected. No participant quote is claimed in this repository.**
