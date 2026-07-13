@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { geocodeLocation, loadLiveIncidentBundle, validateAreaQuery } from "../src/engine/liveSources";
 
 function jsonResponse(body: unknown, status = 200) {
@@ -8,22 +8,21 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function areaResult(latitude = "34.0480643", longitude = "-118.5264706") {
+function geocodeProxyResponse(
+  latitude = 34.0480643,
+  longitude = -118.5264706,
+  label = "Pacific Palisades, Los Angeles, California"
+) {
   return {
-    lat: latitude,
-    lon: longitude,
-    display_name: "Pacific Palisades, Los Angeles, California, United States — raw provider label",
-    addresstype: "suburb",
-    type: "suburb",
-    address: {
-      suburb: "Pacific Palisades",
-      city: "Los Angeles",
-      state: "California"
-    }
+    success: true,
+    data: { label, latitude, longitude },
+    meta: { cache: "miss" }
   };
 }
 
 describe("live source ingestion", () => {
+  afterEach(() => vi.useRealTimers());
+
   test("accepts areas but rejects street-address precision", async () => {
     expect(validateAreaQuery(" Pasadena, CA ")).toEqual({ ok: true, query: "Pasadena, CA" });
     expect(validateAreaQuery("91101")).toEqual({ ok: true, query: "91101" });
@@ -55,44 +54,54 @@ describe("live source ingestion", () => {
     expect(JSON.stringify(bundle)).not.toContain(query);
   });
 
-  test("caches normalized coarse-area geocodes for the current browser session", async () => {
-    const fetcher = vi.fn(async () => jsonResponse([areaResult()]));
+  test("posts normalized coarse-area queries to the same-origin proxy", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      success: true,
+      data: { label: "Pacific Palisades, Los Angeles, California", latitude: 34.0480643, longitude: -118.5264706 },
+      meta: { cache: "miss" }
+    }));
 
-    const first = await geocodeLocation(" Pacific   Palisades ", fetcher);
-    const second = await geocodeLocation("pacific palisades", fetcher);
+    const result = await geocodeLocation(" Pacific   Palisades ", fetcher);
+    const [input, init] = fetcher.mock.calls[0] ?? [];
 
-    expect(first).toEqual(second);
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(result.label).toBe("Pacific Palisades, Los Angeles, California");
+    expect(String(input)).toBe("/api/geocode");
+    expect(init).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(init?.body))).toEqual({ query: "Pacific Palisades" });
+    expect(String(input)).not.toContain("nominatim.openstreetmap.org");
   });
 
-  test("spaces uncached Nominatim requests at least one second apart", async () => {
+  test("keeps the request timeout active while a response body is stalled", async () => {
     vi.useFakeTimers();
-    try {
-      const fetcher = vi.fn(async () => jsonResponse([areaResult()]));
+    let outcome = "pending";
+    let aborted = false;
+    const fetcher = vi.fn(async (_input: string | URL, init?: RequestInit) => ({
+      ok: true,
+      status: 200,
+      json: () => new Promise<never>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
+      })
+    }) as Response);
 
-      await geocodeLocation("Pasadena", fetcher);
-      const second = geocodeLocation("Altadena", fetcher);
-      await Promise.resolve();
-      expect(fetcher).toHaveBeenCalledTimes(1);
+    void geocodeLocation("Pasadena", fetcher).then(
+      () => { outcome = "resolved"; },
+      () => { outcome = "rejected"; }
+    );
+    await vi.advanceTimersByTimeAsync(9_000);
+    await Promise.resolve();
 
-      await vi.advanceTimersByTimeAsync(999);
-      expect(fetcher).toHaveBeenCalledTimes(1);
-
-      await vi.advanceTimersByTimeAsync(1);
-      await second;
-      expect(fetcher).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(aborted).toBe(true);
+    expect(outcome).toBe("rejected");
   });
 
   test("loads a geocoded location with nearby NIFC incidents, NWS alerts, and EONET wildfire records", async () => {
     const fetcher = vi.fn(async (input: string | URL) => {
       const url = String(input);
 
-      if (url.includes("nominatim.openstreetmap.org")) {
-        return jsonResponse([areaResult()]);
-      }
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse());
 
       if (url.includes("WFIGS_Incident_Locations_Current")) {
         return jsonResponse({
@@ -181,28 +190,49 @@ describe("live source ingestion", () => {
     expect(bundle.sourceStates.find((state) => state.id === "nws")?.status).toBe("live");
     expect(bundle.sourceStates.find((state) => state.id === "firms")?.status).toBe("optional");
     expect(bundle.signals.some((signal) => signal.source === "NWS" && signal.title === "Red Flag Warning")).toBe(true);
+    const eonetRequest = fetcher.mock.calls
+      .map(([input]) => String(input))
+      .find((url) => url.includes("eonet.gsfc.nasa.gov"));
+    const [west, north, east, south] = new URL(eonetRequest ?? "https://invalid.test").searchParams
+      .get("bbox")
+      ?.split(",")
+      .map(Number) ?? [];
+    expect(west).toBeLessThan(east ?? Number.NEGATIVE_INFINITY);
+    expect(north).toBeGreaterThan(south ?? Number.POSITIVE_INFINITY);
   });
 
-  test("rejects a precise Nominatim result even when the submitted query looks coarse", async () => {
-    const fetcher = vi.fn(async () =>
-      jsonResponse([
-        {
-          lat: "34.1478123",
-          lon: "-118.1445123",
-          display_name: "123 Main Street, Pasadena, California",
-          addresstype: "building",
-          type: "house",
-          address: { house_number: "123", road: "Main Street", city: "Pasadena", state: "California" }
-        }
-      ])
-    );
+  test("leaves missing NWS alert time unavailable instead of fabricating one", async () => {
+    const fetcher = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse());
+      if (url.includes("WFIGS_Incident_Locations_Current")) return jsonResponse({ features: [] });
+      if (url.includes("api.weather.gov/alerts/active")) {
+        return jsonResponse({ features: [{ properties: { event: "Fire Weather Watch", headline: "Timing unavailable" } }] });
+      }
+      if (url.includes("eonet.gsfc.nasa.gov")) return jsonResponse({ events: [] });
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    const bundle = await loadLiveIncidentBundle("Pacific Palisades, CA", {
+      fetcher,
+      now: new Date("2026-07-03T15:00:00Z")
+    });
+
+    expect(bundle.signals.find((signal) => signal.title === "Fire Weather Watch")?.time).toBe("");
+  });
+
+  test("keeps a proxy-rejected precise result out of browser state", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      success: false,
+      error: { code: "not_found", message: "No coarse area match was found. Try a city, ZIP code, or neighborhood." }
+    }, 404));
 
     const bundle = await loadLiveIncidentBundle("Pasadena, CA", { fetcher });
     const serialized = JSON.stringify(bundle);
 
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(bundle.location).toBeNull();
-    expect(serialized).not.toContain("123 Main Street");
+    expect(serialized).not.toContain("Main Street");
     expect(serialized).not.toContain("34.1478123");
     expect(bundle.sourceStates[0]?.detail).toBe("No coarse area match was found. Try a city, ZIP code, or neighborhood.");
   });
@@ -211,9 +241,7 @@ describe("live source ingestion", () => {
     const fetcher = vi.fn(async (input: string | URL) => {
       const url = String(input);
 
-      if (url.includes("nominatim.openstreetmap.org")) {
-        return jsonResponse([areaResult("34.048", "-118.526")]);
-      }
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse(34.048, -118.526));
 
       if (url.includes("WFIGS_Incident_Locations_Current")) {
         return jsonResponse({ type: "FeatureCollection", features: [] });
@@ -243,7 +271,7 @@ describe("live source ingestion", () => {
     const fetcher = vi.fn(async (input: string | URL) => {
       const url = String(input);
 
-      if (url.includes("nominatim.openstreetmap.org")) return jsonResponse([areaResult()]);
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse());
       if (url.includes("WFIGS_Incident_Locations_Current")) {
         return jsonResponse({ error: { code: 400, message: "Invalid query" } });
       }
@@ -263,9 +291,7 @@ describe("live source ingestion", () => {
     const fetcher = vi.fn(async (input: string | URL) => {
       const url = String(input);
 
-      if (url.includes("nominatim.openstreetmap.org")) {
-        return jsonResponse([areaResult("34.048", "-118.526")]);
-      }
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse(34.048, -118.526));
 
       if (url.includes("WFIGS_Incident_Locations_Current")) {
         return jsonResponse({ type: "FeatureCollection", features: [] });
@@ -297,17 +323,7 @@ describe("live source ingestion", () => {
     const fetcher = vi.fn(async (input: string | URL) => {
       const url = String(input);
 
-      if (url.includes("nominatim.openstreetmap.org")) {
-        return jsonResponse([
-          {
-            ...areaResult("34.1478123", "-118.1445123"),
-            display_name: "Pasadena raw provider label",
-            addresstype: "city",
-            type: "administrative",
-            address: { city: "Pasadena", state: "California" }
-          }
-        ]);
-      }
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse(34.1478123, -118.1445123, "Pasadena, California"));
 
       if (url.includes("WFIGS_Incident_Locations_Current")) return jsonResponse({ error: "denied" }, 403);
       if (url.includes("api.weather.gov/alerts/active")) return jsonResponse({ error: "denied" }, 403);
@@ -344,16 +360,7 @@ describe("live source ingestion", () => {
     const fetcher = vi.fn(async (input: string | URL) => {
       const url = String(input);
 
-      if (url.includes("nominatim.openstreetmap.org")) {
-        return jsonResponse([
-          {
-            ...areaResult("34.1478", "-118.1445"),
-            addresstype: "city",
-            type: "administrative",
-            address: { city: "Pasadena", state: "California" }
-          }
-        ]);
-      }
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse(34.1478, -118.1445, "Pasadena, California"));
 
       if (url.includes("WFIGS_Incident_Locations_Current")) return jsonResponse({ features: [] });
       if (url.includes("api.weather.gov/alerts/active")) return jsonResponse({ features: [] });
@@ -392,7 +399,7 @@ describe("live source ingestion", () => {
   test("drops NIFC incidents whose coordinates are outside geographic bounds", async () => {
     const fetcher = vi.fn(async (input: string | URL) => {
       const url = String(input);
-      if (url.includes("nominatim.openstreetmap.org")) return jsonResponse([areaResult()]);
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse());
       if (url.includes("WFIGS_Incident_Locations_Current")) {
         return jsonResponse({
           features: [
@@ -412,5 +419,42 @@ describe("live source ingestion", () => {
 
     expect(bundle.incidents.some((incident) => incident.name === "INVALID")).toBe(false);
     expect(bundle.sourceStates.find((state) => state.id === "nifc")?.count).toBe(0);
+  });
+
+  test("rejects blank feed coordinates and dates instead of coercing them to zero", async () => {
+    const fetcher = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url === "/api/geocode") return jsonResponse(geocodeProxyResponse());
+      if (url.includes("WFIGS_Incident_Locations_Current")) {
+        return jsonResponse({
+          features: [{
+            geometry: { coordinates: ["", " "] },
+            properties: {
+              OBJECTID: 11,
+              IncidentName: "BLANK COORDINATES",
+              FireDiscoveryDateTime: " ",
+              ModifiedOnDateTime_dt: ""
+            }
+          }]
+        });
+      }
+      if (url.includes("api.weather.gov/alerts/active")) return jsonResponse({ features: [] });
+      if (url.includes("eonet.gsfc.nasa.gov")) {
+        return jsonResponse({
+          events: [{
+            id: "BLANK_DATE",
+            title: "Blank date wildfire",
+            geometry: [{ date: " ", coordinates: [-118.2, 34.2] }]
+          }]
+        });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    const bundle = await loadLiveIncidentBundle("Pacific Palisades, CA", { fetcher });
+
+    expect(bundle.incidents).toEqual([]);
+    expect(bundle.sourceStates.find((state) => state.id === "nifc")?.count).toBe(0);
+    expect(bundle.sourceStates.find((state) => state.id === "eonet")?.count).toBe(0);
   });
 });

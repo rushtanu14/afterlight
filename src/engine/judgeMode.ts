@@ -1,7 +1,7 @@
 import { historicalScenarios } from "../data/historicalScenarios";
 import type { HistoricalScenario, HistoricalScenarioId } from "../data/replay";
 
-export type JudgePhase = "thesis" | "official_rows" | "memory_output" | "evaluation" | "safety_boundary";
+export type JudgePhase = "thesis" | "official_rows" | "memory_output" | "evaluation" | "drill_output" | "safety_boundary";
 
 export type JudgeStep = {
   scenarioId: HistoricalScenarioId;
@@ -13,10 +13,11 @@ export type JudgeStep = {
 
 export const JUDGE_RUN_DURATION_MS = 90_000;
 const SCENARIO_DURATION_MS = JUDGE_RUN_DURATION_MS / 2;
-const THESIS_END_MS = 7_500;
-const OFFICIAL_ROWS_END_MS = 30_000;
-const MEMORY_OUTPUT_END_MS = 37_500;
-const EVALUATION_END_MS = 41_250;
+const THESIS_END_MS = 6_000;
+const OFFICIAL_ROWS_END_MS = 27_000;
+const MEMORY_OUTPUT_END_MS = 33_000;
+const EVALUATION_END_MS = 37_000;
+const DRILL_OUTPUT_END_MS = 41_000;
 
 function scenarioAt(index: number) {
   const scenario = historicalScenarios[index];
@@ -57,7 +58,9 @@ export function getJudgeStep(elapsedMs: number): JudgeStep | null {
           ? "memory_output"
           : scenarioElapsedMs < EVALUATION_END_MS
             ? "evaluation"
-            : "safety_boundary";
+            : scenarioElapsedMs < DRILL_OUTPUT_END_MS
+              ? "drill_output"
+              : "safety_boundary";
 
   return {
     scenarioId: scenario.id,

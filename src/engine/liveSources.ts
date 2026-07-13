@@ -1,3 +1,15 @@
+import {
+  AREA_QUERY_MESSAGE,
+  normalizeAreaQuery,
+  parseGeocodeProxyResponse,
+  validateAreaQuery,
+  type AreaQueryValidation,
+  type GeocodeLocation
+} from "../shared/geocodeContract";
+
+export { validateAreaQuery } from "../shared/geocodeContract";
+export type { AreaQueryValidation } from "../shared/geocodeContract";
+
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 export type LiveSourceId = "nominatim" | "nifc" | "nws" | "eonet" | "firms";
@@ -23,11 +35,7 @@ export type LiveIncident = {
   feedUrl: string;
 };
 
-export type LiveLocation = {
-  label: string;
-  latitude: number;
-  longitude: number;
-};
+export type LiveLocation = GeocodeLocation;
 
 export type LiveSignal = {
   id: string;
@@ -88,7 +96,7 @@ const NIFC_WFIGS_URL =
 const NIFC_LAYER_URL =
   "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations_Current/FeatureServer/0";
 const NWS_ALERTS_BASE_URL = "https://api.weather.gov/alerts/active";
-const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
+const GEOCODE_PROXY_URL = "/api/geocode";
 const EONET_EVENTS_URL = "https://eonet.gsfc.nasa.gov/api/v3/events";
 const FIRMS_API_URL = "https://firms.modaps.eosdis.nasa.gov/api/";
 const OFFICIAL_SOURCE_HOSTS = new Set([
@@ -100,21 +108,6 @@ const OFFICIAL_SOURCE_HOSTS = new Set([
   "irwin.doi.gov",
   "www.gdacs.org"
 ]);
-const COARSE_NOMINATIM_TYPES = new Set([
-  "administrative",
-  "borough",
-  "city",
-  "city_district",
-  "county",
-  "municipality",
-  "neighbourhood",
-  "postcode",
-  "state",
-  "suburb",
-  "town",
-  "village"
-]);
-
 class SourceFetchError extends Error {
   readonly sourceId: LiveSourceId;
   readonly status: number;
@@ -126,79 +119,6 @@ class SourceFetchError extends Error {
   }
 }
 
-export type AreaQueryValidation = { ok: true; query: string } | { ok: false; message: string };
-
-const AREA_QUERY_MESSAGE = "Enter a city, ZIP code, or neighborhood, not a street address.";
-const STREET_DESIGNATOR =
-  "street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|way|place|pl|highway|hwy|trail|trl|terrace|ter|circle|cir|loop|rue|calle|camino|via|strada|straße|strasse|chemin|route|rua|avenida";
-const HOUSE_NUMBER = "\\d{1,6}[a-z]?(?:[-/]\\d{1,6}[a-z]?)?";
-const STREET_ADDRESS_PATTERN = new RegExp(
-  `(?:^${HOUSE_NUMBER}\\s+.*\\b(?:${STREET_DESIGNATOR})\\b|\\b(?:${STREET_DESIGNATOR})\\b.+\\s${HOUSE_NUMBER}(?:\\s|,|$))`,
-  "i"
-);
-const LEADING_HOUSE_NUMBER_PATTERN = new RegExp("^" + HOUSE_NUMBER + "\\s+\\S", "i");
-const COORDINATE_PAIR_PATTERN = /^[+-]?\d{1,2}(?:\.\d+)?\s*,\s*[+-]?\d{1,3}(?:\.\d+)?$/;
-
-export function validateAreaQuery(query: string): AreaQueryValidation {
-  const normalized = query.trim();
-  const hasControlCharacters = /[\u0000-\u001f\u007f]/.test(normalized);
-  const hasUnitDesignator = /\b(?:apartment|apt|suite|unit)\s*[#-]?\s*\w+/i.test(normalized);
-  const hasLeadingHouseNumber = LEADING_HOUSE_NUMBER_PATTERN.test(normalized);
-
-  if (
-    normalized.length < 2 ||
-    normalized.length > 100 ||
-    hasControlCharacters ||
-    hasUnitDesignator ||
-    hasLeadingHouseNumber ||
-    STREET_ADDRESS_PATTERN.test(normalized) ||
-    COORDINATE_PAIR_PATTERN.test(normalized)
-  ) {
-    return { ok: false, message: AREA_QUERY_MESSAGE };
-  }
-
-  return { ok: true, query: normalized };
-}
-
-type GeocoderRequestState = {
-  cache: Map<string, LiveLocation>;
-  nextRequestAt: number;
-  tail: Promise<void>;
-};
-
-const NOMINATIM_MIN_INTERVAL_MS = 1_000;
-const MAX_GEOCODE_CACHE_ENTRIES = 25;
-const geocoderRequestStates = new WeakMap<FetchLike, GeocoderRequestState>();
-
-function geocoderStateFor(fetcher: FetchLike) {
-  const existing = geocoderRequestStates.get(fetcher);
-  if (existing) return existing;
-
-  const created: GeocoderRequestState = {
-    cache: new Map(),
-    nextRequestAt: 0,
-    tail: Promise.resolve()
-  };
-  geocoderRequestStates.set(fetcher, created);
-  return created;
-}
-
-function normalizedGeocodeCacheKey(query: string) {
-  return query.replace(/\s+/g, " ").toLocaleLowerCase("en-US");
-}
-
-function wait(milliseconds: number) {
-  return new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds));
-}
-
-function cacheGeocode(state: GeocoderRequestState, key: string, location: LiveLocation) {
-  if (state.cache.size >= MAX_GEOCODE_CACHE_ENTRIES) {
-    const oldestKey = state.cache.keys().next().value;
-    if (oldestKey) state.cache.delete(oldestKey);
-  }
-  state.cache.set(key, { ...location });
-}
-
 function safeGeocoderError(error: unknown) {
   if (error instanceof SourceFetchError) {
     return error.status === 429 || error.status >= 500
@@ -208,7 +128,7 @@ function safeGeocoderError(error: unknown) {
 
   if (
     error instanceof Error &&
-    [AREA_QUERY_MESSAGE, "No coarse area match was found. Try a city, ZIP code, or neighborhood.", "The area lookup returned an invalid location."].includes(error.message)
+    [AREA_QUERY_MESSAGE, "No coarse area match was found. Try a city, ZIP code, or neighborhood."].includes(error.message)
   ) {
     return error.message;
   }
@@ -253,31 +173,12 @@ function allowlistedOfficialUrl(value: unknown) {
   }
 }
 
-function isCoarseNominatimResult(result: Record<string, unknown>) {
-  const addressType = stringValue(result.addresstype).toLowerCase();
-  const type = stringValue(result.type).toLowerCase();
-  const address = isRecord(result.address) ? result.address : {};
-  const hasPreciseAddress = ["house_number", "road", "building", "amenity"].some((field) => stringValue(address[field]).length > 0);
-
-  return !hasPreciseAddress && (COARSE_NOMINATIM_TYPES.has(addressType) || COARSE_NOMINATIM_TYPES.has(type));
-}
-
-function coarseAreaLabel(result: Record<string, unknown>, fallback: string) {
-  const address = isRecord(result.address) ? result.address : {};
-  const addressType = stringValue(result.addresstype).toLowerCase();
-  const fields =
-    addressType === "postcode"
-      ? ["postcode", "city", "town", "village", "state"]
-      : ["neighbourhood", "suburb", "city_district", "city", "town", "village", "municipality", "county", "state"];
-  const parts = fields.map((field) => stringValue(address[field])).filter((part, index, values) => part && values.indexOf(part) === index);
-
-  return parts.slice(0, 3).join(", ") || fallback;
-}
-
 function numberValue(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
-    const parsed = Number(value);
+    const normalized = value.trim();
+    if (!normalized) return undefined;
+    const parsed = Number(normalized);
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
@@ -359,12 +260,18 @@ function sourceState(meta: SourceMeta, status: LiveSourceStatus, detail: string,
   };
 }
 
-async function fetchWithTimeout(fetcher: FetchLike, url: string, init: RequestInit = {}, timeoutMs = 9000) {
+async function consumeWithTimeout<T>(
+  fetcher: FetchLike,
+  url: string,
+  init: RequestInit,
+  consume: (response: Response) => Promise<T>,
+  timeoutMs = 9000
+) {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    return await fetcher(url, {
+    const response = await fetcher(url, {
       ...init,
       signal: controller.signal,
       headers: {
@@ -372,68 +279,39 @@ async function fetchWithTimeout(fetcher: FetchLike, url: string, init: RequestIn
         ...init.headers
       }
     });
+    return await consume(response);
   } finally {
     globalThis.clearTimeout(timeout);
   }
 }
 
 async function readJson(fetcher: FetchLike, sourceId: LiveSourceId, url: string, init?: RequestInit) {
-  const response = await fetchWithTimeout(fetcher, url, init);
-  if (!response.ok) throw new SourceFetchError(sourceId, response.status);
-  return response.json() as Promise<unknown>;
+  return consumeWithTimeout(fetcher, url, init ?? {}, async (response) => {
+    if (!response.ok) throw new SourceFetchError(sourceId, response.status);
+    return await response.json() as unknown;
+  });
 }
 
 export async function geocodeLocation(query: string, fetcher: FetchLike = defaultFetch): Promise<LiveLocation> {
   const validation = validateAreaQuery(query);
   if (validation.ok === false) throw new Error(validation.message);
+  const { response, payload } = await consumeWithTimeout(fetcher, GEOCODE_PROXY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: normalizeAreaQuery(validation.query) })
+  }, async (response) => ({
+    response,
+    payload: parseGeocodeProxyResponse(await response.json() as unknown)
+  }));
 
-  const state = geocoderStateFor(fetcher);
-  const cacheKey = normalizedGeocodeCacheKey(validation.query);
-  const cached = state.cache.get(cacheKey);
-  if (cached) return { ...cached };
-
-  const turn = state.tail.then(async () => {
-    const queuedCacheHit = state.cache.get(cacheKey);
-    if (queuedCacheHit) return { ...queuedCacheHit };
-
-    const delay = Math.max(0, state.nextRequestAt - Date.now());
-    if (delay > 0) await wait(delay);
-    state.nextRequestAt = Date.now() + NOMINATIM_MIN_INTERVAL_MS;
-    return null;
-  });
-  state.tail = turn.then(
-    () => undefined,
-    () => undefined
-  );
-  const queuedCacheHit = await turn;
-  if (queuedCacheHit) return queuedCacheHit;
-
-  const params = new URLSearchParams({
-    q: validation.query,
-    format: "jsonv2",
-    limit: "5",
-    addressdetails: "1"
-  });
-  const results = await readJson(fetcher, "nominatim", `${NOMINATIM_SEARCH_URL}?${params.toString()}`, {
-    headers: { Accept: "application/json", "Accept-Language": "en-US" }
-  });
-
-  const first = Array.isArray(results) ? results.find((result): result is Record<string, unknown> => isRecord(result) && isCoarseNominatimResult(result)) : undefined;
-  if (!first) throw new Error("No coarse area match was found. Try a city, ZIP code, or neighborhood.");
-  const latitude = numberValue(first.lat);
-  const longitude = numberValue(first.lon);
-
-  if (latitude === undefined || longitude === undefined || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
-    throw new Error("The area lookup returned an invalid location.");
+  if (!response.ok || !payload?.success) {
+    if (payload && !payload.success && [AREA_QUERY_MESSAGE, "No coarse area match was found. Try a city, ZIP code, or neighborhood."].includes(payload.error.message)) {
+      throw new Error(payload.error.message);
+    }
+    throw new SourceFetchError("nominatim", response.status);
   }
 
-  const location = {
-    label: coarseAreaLabel(first, validation.query),
-    latitude,
-    longitude
-  };
-  cacheGeocode(state, cacheKey, location);
-  return { ...location };
+  return { ...payload.data };
 }
 
 function buildNifcUrl(location: LiveLocation) {
@@ -554,7 +432,7 @@ function mapNwsSignal(feature: unknown, index: number): LiveSignal | null {
   const props = feature.properties;
   const event = stringValue(props.event, "Weather alert");
   const headline = stringValue(props.headline, stringValue(props.description, "Active NWS alert near the searched point."));
-  const time = stringValue(props.effective, stringValue(props.onset, new Date().toISOString()));
+  const time = stringValue(props.effective, stringValue(props.onset));
 
   return {
     id: `nws-${index}-${event}`,
@@ -597,7 +475,7 @@ function buildEonetUrl(location: LiveLocation) {
     status: "open",
     days: "60",
     limit: "50",
-    bbox: `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`
+    bbox: `${bbox.west},${bbox.north},${bbox.east},${bbox.south}`
   });
   return `${EONET_EVENTS_URL}?${params.toString()}`;
 }
@@ -727,7 +605,7 @@ export async function loadLiveIncidentBundle(query: string, options: LiveSourceO
   const fetcher = options.fetcher ?? defaultFetch;
   const now = options.now ?? new Date();
   const baseCheckedAt = checkedAt(now);
-  const geocoderMeta = { id: "nominatim" as const, name: "OpenStreetMap geocoding", url: NOMINATIM_SEARCH_URL };
+  const geocoderMeta = { id: "nominatim" as const, name: "Afterlight geocoding proxy", url: GEOCODE_PROXY_URL };
   const validation = validateAreaQuery(query);
 
   if (validation.ok === false) {
@@ -742,7 +620,7 @@ export async function loadLiveIncidentBundle(query: string, options: LiveSourceO
 
   try {
     const location = await geocodeLocation(validation.query, fetcher);
-    const geocoderState = sourceState(geocoderMeta, "live", "Search text converted into latitude and longitude.", 1, now);
+    const geocoderState = sourceState(geocoderMeta, "live", "The same-origin proxy returned one coarse-area match.", 1, now);
     const [nifc, nws, eonet] = await Promise.all([
       safeSource(() => loadNifcIncidents(location, fetcher, now), { id: "nifc", name: "NIFC WFIGS", url: NIFC_LAYER_URL }, now),
       safeSource(() => loadNwsAlerts(location, fetcher, now), { id: "nws", name: "NWS alerts", url: NWS_ALERTS_BASE_URL }, now),

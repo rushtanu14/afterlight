@@ -8,6 +8,21 @@ type LiveMonitorProps = {
   searchStatus: "idle" | "loading" | "ready" | "error";
 };
 
+function formatFreshness(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return value || "time unavailable";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "time unavailable";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short"
+  }).format(date);
+}
+
 export function LiveMonitor({ bundle, error, submittedQuery, resultQuery, searchStatus }: LiveMonitorProps) {
   const checkedStates = bundle?.sourceStates.filter((state) => state.status !== "optional") ?? [];
   const usableCount = checkedStates.filter((state) => state.status === "live" || state.status === "quiet").length;
@@ -61,6 +76,7 @@ export function LiveMonitor({ bundle, error, submittedQuery, resultQuery, search
                   <strong>{incident.name}</strong>
                   <small>{incident.location}</small>
                   <small>Public point: {incident.latitude.toFixed(2)}, {incident.longitude.toFixed(2)}</small>
+                  <small>{incident.sourceId === "nifc" ? "Provider updated" : "Provider event time"}: {incident.lastUpdated}</small>
                 </article>
               ))
             ) : (
@@ -83,7 +99,9 @@ export function LiveMonitor({ bundle, error, submittedQuery, resultQuery, search
                 <span>{state.status}</span>
                 <strong>{state.name}</strong>
                 <p>{state.detail}</p>
-                <small>{state.count} records</small>
+                <small>
+                  {state.count} records · {state.status === "optional" ? "Not checked" : `Checked ${formatFreshness(state.checkedAt)}`}
+                </small>
               </article>
             )) ?? <article className="memory-card empty">Source health appears after an area search.</article>}
           </div>
@@ -104,6 +122,7 @@ export function LiveMonitor({ bundle, error, submittedQuery, resultQuery, search
                   <span>{signal.source}</span>
                   <strong>{signal.title}</strong>
                   <p>{signal.detail}</p>
+                  <small>{signal.source === "NWS" ? "Alert effective" : "Signal time"}: {formatFreshness(signal.time)}</small>
                 </a>
               ))
             ) : (

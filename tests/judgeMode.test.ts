@@ -12,7 +12,7 @@ describe("deterministic judge mode", () => {
   });
 
   test("visits every judge phase for both scenarios", () => {
-    const samples = [0, 8_000, 31_000, 39_000, 43_000, 45_000, 53_000, 76_000, 84_000, 88_000]
+    const samples = [0, 7_000, 28_000, 34_000, 38_000, 43_000, 45_000, 52_000, 73_000, 79_000, 83_000, 88_000]
       .map((elapsedMs) => getJudgeStep(elapsedMs))
       .filter((step) => step !== null);
 
@@ -22,6 +22,7 @@ describe("deterministic judge mode", () => {
         "official_rows",
         "memory_output",
         "evaluation",
+        "drill_output",
         "safety_boundary"
       ]);
     }

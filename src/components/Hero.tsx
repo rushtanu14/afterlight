@@ -52,23 +52,20 @@ export function Hero({
           <a href="#replay">Incident</a>
           <a href="#connectors">Sources</a>
           <a href="#memory">Memory</a>
+          <a href="#practice">Drill</a>
         </nav>
       </header>
 
       <div className="hero-layout" id="top">
         <div className="hero-content">
           <p className="signal-label">Disaster memory engine</p>
-          <h1 id="hero-title">Turn past evacuations into household memory.</h1>
+          <h1 id="hero-title">Turn past evacuations into a household drill.</h1>
           <p className="hero-copy">
-            Check current public sources, then separately replay verified Palisades and Eaton rows to preserve what a household should remember.
+            Assign responsibilities, expose unresolved gaps, and print a practice card grounded in source-backed Palisades and Eaton lessons.
           </p>
           <div className="hero-actions">
-            <button className="primary-cta" type="button" onClick={onReplayStart}>
-              Enter Afterlight
-            </button>
-            <a className="ghost-cta" href="#connectors">
-              View source chain
-            </a>
+            <a className="primary-cta" href="#practice">Build household drill</a>
+            <button className="ghost-cta" type="button" onClick={onReplayStart}>Replay a verified case</button>
           </div>
         </div>
 
@@ -94,7 +91,7 @@ export function Hero({
               <button type="submit" disabled={searchStatus === "loading"}>{searchStatus === "loading" ? "Checking" : "Find fires"}</button>
             </div>
             <p id="locationPrivacyHint">
-              City, ZIP code, or neighborhood only—not a street address. Your area is sent to OpenStreetMap Nominatim; derived coordinates are sent to NIFC, NWS, and NASA EONET.
+              City, ZIP code, or neighborhood only—not a street address. Afterlight's same-origin proxy sends that coarse area to OpenStreetMap Nominatim; your browser sends the returned regional coordinates to NIFC, NWS, and NASA EONET.
             </p>
             <p id="locationSearchStatus" className={searchStatus === "error" ? "form-status error" : "form-status"} role={searchStatus === "error" ? "alert" : "status"} aria-live={searchStatus === "error" ? "assertive" : "polite"}>
               {searchMessage}

@@ -1,9 +1,11 @@
+import { useState } from "react";
 import type { HistoricalScenario, HistoricalScenarioId } from "../data/replay";
 import type { HistoricalDecision } from "../engine/detector";
 import type { JudgePhase } from "../engine/judgeMode";
 import { MAX_MEMORY_EDIT_LENGTH, type ScenarioMemory } from "../engine/memoryStorage";
 import { trustedHistoricalSourceUrl } from "../engine/trustedHistoricalSources";
 import { evaluateScenario } from "../engine/detector";
+import { DestructiveConfirmation } from "./DestructiveConfirmation";
 import { EvaluationPanel } from "./EvaluationPanel";
 import { HistoricalIncidentMap } from "./HistoricalIncidentMap";
 import { SafetyBoundary } from "./SafetyBoundary";
@@ -55,6 +57,7 @@ export function HistoricalReplay({
   onSelectScenario,
   onTogglePlay
 }: HistoricalReplayProps) {
+  const [clearScope, setClearScope] = useState<"case" | "all" | null>(null);
   const activeEvent = scenario.events[activeIndex] ?? scenario.events[0];
   const activeDecision = decisions[activeIndex] ?? decisions[0];
   if (!activeEvent || !activeDecision) return null;
@@ -72,7 +75,9 @@ export function HistoricalReplay({
         ? "Run judge replay"
         : "Play";
   const persistenceMessage =
-    memoryPersistenceStatus === "saved"
+    judgeMode
+      ? "Judge mode is ephemeral; changes do not read or write saved device memory."
+      : memoryPersistenceStatus === "saved"
       ? "Latest memory change saved on this device."
       : memoryPersistenceStatus === "error"
         ? "Latest change is visible now but could not be saved in this browser."
@@ -265,9 +270,25 @@ export function HistoricalReplay({
             {persistenceMessage}
           </p>
           <div className="memory-actions">
-            <button className="icon-button subtle" type="button" onClick={onClearScenarioMemory}>Clear this case</button>
-            <button className="icon-button subtle" type="button" onClick={onClearAllMemory}>Clear all device memory</button>
+            <button className="icon-button subtle" type="button" onClick={() => setClearScope("case")}>Clear this case</button>
+            <button className="icon-button subtle" type="button" onClick={() => setClearScope("all")}>Clear all device memory</button>
           </div>
+          {clearScope ? (
+            <DestructiveConfirmation
+              title={clearScope === "all" ? "Clear all Afterlight device memory?" : "Clear this case memory?"}
+              description={clearScope === "all"
+                ? "This deletes every saved historical lesson and the complete household drill from this browser."
+                : `This deletes saved lessons and linked drill assignments for ${scenario.name} from this browser.`}
+              cancelLabel="Keep memory"
+              confirmLabel={clearScope === "all" ? "Delete all device memory" : "Delete case memory"}
+              onCancel={() => setClearScope(null)}
+              onConfirm={() => {
+                if (clearScope === "all") onClearAllMemory();
+                else onClearScenarioMemory();
+                setClearScope(null);
+              }}
+            />
+          ) : null}
           <div className="memory-cards">
             {judgePhase === "memory_output" ? (
               <article className="memory-card">

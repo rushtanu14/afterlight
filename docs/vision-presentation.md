@@ -6,13 +6,15 @@ Incident logs preserve what agencies observed. Households remember what failed. 
 
 Afterlight explores a household black box for disaster memory.
 
-## Slide 2: Two Surfaces, One Hard Boundary
+## Slide 2: Three Surfaces, One Hard Boundary
 
-The Live Source Monitor shows current public incident and alert records with runtime source health.
+The Live Source Monitor shows current public incident and alert records with provider record time, alert effective time, and runtime source-check health.
 
 The Historical Replay shows attributable Palisades and Eaton rows, categorical action state, historical map provenance, and case-scoped household memory.
 
-Current records never inherit the historical detector, route memory, or household cards.
+The Household Drill Builder turns non-sensitive constraints and confirmed lessons into assigned pre-incident practice.
+
+Current records never inherit the historical detector, route memory, household cards, or drill output.
 
 ## Slide 3: Source Rows Before Conclusions
 
@@ -38,23 +40,29 @@ Camp Fire is the negative control. Its archive exists, but granular replay is bl
 
 That refusal is part of the technical proof.
 
-## Slide 6: Household Memory, With Limits
+## Slide 6: Household Memory Becomes Assigned Practice
 
 A user can confirm a historical lesson and edit its future-memory text. Confirmations and edits stay scenario-scoped in browser `localStorage`.
 
 They are not encrypted, synchronized, backed up, or suitable for exact addresses, medical details, or other sensitive data.
 
+A separate drill payload adds baseline and constraint-specific tasks, one coarse household decision plus primary and backup roles per task, practiced handoffs, a practice date, and a printable card. Editing a decision or role invalidates its prior practice mark. User-edited historical text is labeled as a household adaptation, unresolved tasks stay visible, and there is no readiness score or safety certification.
+
 ## Slide 7: The 90-Second Judge Run
 
 Open `?judge=1`.
 
-The deterministic run covers the thesis, official rows, a memory preview marked `not saved`, evaluation, and the safety boundary for both loaded fires. Reduced-motion preference disables autoplay.
+The judge run is ephemeral: saved household memory and drill payloads are never read, rendered, overwritten, or deleted during demo capture.
+
+The deterministic run covers the thesis, official rows, a memory preview marked `not saved`, evaluation, household drill output, and the safety boundary for both loaded fires. Reduced-motion preference disables autoplay.
 
 ## Slide 8: What We Do Not Claim
 
 Afterlight is not an alerting service, route planner, fire predictor, or offline map.
 
-It does not provide numeric risk scores, evacuation timing, or current route recommendations. Public feeds may be incomplete or unavailable. FIRMS has no browser key or request.
+It does not provide numeric risk scores, evacuation timing, current route recommendations, or proof that a completed drill makes a household safe. Public feeds may be incomplete or unavailable. FIRMS has no browser key or request.
+
+Current geocoding goes through same-origin `/api/geocode`; the browser no longer contacts Nominatim directly. Production requires shared Redis for hashed cache/client keys, per-client request limits, provider-miss capacity, and application-wide provider pacing, and fails closed without it. Cache hits do not consume provider capacity. The fixed official provider rejects redirects, and a platform WAF remains a public-launch gate.
 
 **Human validation: Pending — no quote collected. No participant quote is claimed in this repository.**
 

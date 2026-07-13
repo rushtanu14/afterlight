@@ -1,18 +1,18 @@
 const phases = [
   {
     index: "01",
-    title: "Before",
-    copy: "Review official alerts, old route failures, shelter notes, and non-sensitive preparedness checklists."
+    title: "Assign before fire season",
+    copy: "Choose non-sensitive constraints, name a primary and backup role for each task, then print the household practice card."
   },
   {
     index: "02",
-    title: "During",
-    copy: "Monitor current public signals without attaching them to historical route advice or evacuation timing."
+    title: "Practice and expose gaps",
+    copy: "Rehearse each handoff, record the date even when gaps remain, and resolve unanswered ownership before the next drill."
   },
   {
     index: "03",
-    title: "After",
-    copy: "Convert what failed into route rules, assistance cards, and source checks that survive the next incident."
+    title: "Learn from attributable rows",
+    copy: "Confirm only sourced historical lessons, carry them into the drill, and repeat without turning them into current route advice."
   }
 ];
 
@@ -20,11 +20,11 @@ export function OfflineSection() {
   return (
     <section className="offline-section" id="offline" aria-labelledby="offline-title">
       <div className="offline-copy">
-        <p className="signal-label">Before, during, after</p>
-        <h2 id="offline-title">The product is not another alert dashboard. It is memory that operates.</h2>
+        <p className="signal-label">Repeatable preparedness loop</p>
+        <h2 id="offline-title">A practice artifact, not a one-time demo.</h2>
         <p>
-          The point is not to predict a perfect minute. Current monitoring stays separate from official-row historical lessons that a household can
-          preserve before the same bottleneck repeats.
+          Afterlight is useful when a household leaves with assigned responsibilities, unresolved questions, and a dated card to rehearse again.
+          Current monitoring remains separate and never turns this drill into active-incident guidance.
         </p>
       </div>
       <div className="offline-grid">
