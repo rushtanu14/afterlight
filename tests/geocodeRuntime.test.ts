@@ -144,6 +144,26 @@ describe("geocoder proxy runtime", () => {
     );
   });
 
+  test("parses atomic Redis provider access reservations under minimized keys", async () => {
+    const redis: RedisLike = {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => "OK"),
+      eval: vi.fn(async () => [0, 750, "slot"])
+    };
+    const store = new RedisGeocodeStore(redis);
+
+    expect(await store.reserveProviderAccess(2_000, 86_400, 1_000)).toEqual({
+      allowed: false,
+      retryAfterMs: 750,
+      reason: "slot"
+    });
+    expect(redis.eval).toHaveBeenCalledWith(
+      expect.any(String),
+      ["afterlight:geocode:v1:quota:provider", "afterlight:geocode:v1:provider-slot"],
+      [2_000, 86_400, 1_000]
+    );
+  });
+
   test("fails closed on an internally inconsistent provider-slot response", async () => {
     const redis: RedisLike = {
       get: vi.fn(async () => null),
@@ -153,5 +173,16 @@ describe("geocoder proxy runtime", () => {
     const store = new RedisGeocodeStore(redis);
 
     await expect(store.reserveProviderSlot(1_000)).rejects.toThrow("Invalid provider slot response");
+  });
+
+  test("fails closed on an internally inconsistent provider-access response", async () => {
+    const redis: RedisLike = {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => "OK"),
+      eval: vi.fn(async () => [0, 0, "slot"])
+    };
+    const store = new RedisGeocodeStore(redis);
+
+    await expect(store.reserveProviderAccess(2_000, 86_400, 1_000)).rejects.toThrow("Invalid provider access response");
   });
 });

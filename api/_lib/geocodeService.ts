@@ -200,10 +200,15 @@ async function waitForProviderSlot(
   while (true) {
     const cached = await beforeDeadline(store.get(key), deadlineAt, now);
     if (cached) return { cached };
-    const slot = await beforeDeadline(store.reserveProviderSlot(MINIMUM_PROVIDER_INTERVAL_MS), deadlineAt, now);
-    if (slot.allowed) return { cached: null };
-    if (now() + slot.retryAfterMs >= deadlineAt) return null;
-    await beforeDeadline(sleep(slot.retryAfterMs), deadlineAt, now);
+    const access = await beforeDeadline(
+      store.reserveProviderAccess(PROVIDER_REQUEST_LIMIT, PROVIDER_WINDOW_SECONDS, MINIMUM_PROVIDER_INTERVAL_MS),
+      deadlineAt,
+      now
+    );
+    if (access.allowed) return { cached: null };
+    if (access.reason === "quota") return { providerQuotaRetryAfterMs: access.retryAfterMs };
+    if (now() + access.retryAfterMs >= deadlineAt) return null;
+    await beforeDeadline(sleep(access.retryAfterMs), deadlineAt, now);
   }
 }
 
@@ -258,18 +263,13 @@ export function createGeocodeHandler(dependencies: GeocodeHandlerDependencies) {
       if (cached) return cacheResponse(cached, "hit");
 
       const slot = await waitForProviderSlot(dependencies.store, key, now, sleep, Math.min(deadlineAt, now() + queueLimitMs));
-      if (!slot) return failure(429, "proxy_busy", "Location lookup is busy. Try again shortly.", { "Retry-After": "1" });
-      if (slot.cached) return cacheResponse(slot.cached, "hit");
-      const providerQuota = await beforeDeadline(
-        dependencies.store.reserveProviderQuota(PROVIDER_REQUEST_LIMIT, PROVIDER_WINDOW_SECONDS),
-        deadlineAt,
-        now
-      );
-      if (!providerQuota.allowed) {
+      if (slot?.providerQuotaRetryAfterMs !== undefined) {
         return failure(429, "rate_limited", "Location lookup capacity is temporarily exhausted. Try again later.", {
-          "Retry-After": String(providerQuota.retryAfterSeconds)
+          "Retry-After": String(Math.max(1, Math.ceil(slot.providerQuotaRetryAfterMs / 1_000)))
         });
       }
+      if (!slot) return failure(429, "proxy_busy", "Location lookup is busy. Try again shortly.", { "Retry-After": "1" });
+      if (slot.cached) return cacheResponse(slot.cached, "hit");
     } catch {
       return failure(503, "proxy_unavailable", "Location proxy is temporarily unavailable.");
     }

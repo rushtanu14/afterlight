@@ -60,4 +60,30 @@ describe("geocoder stores", () => {
     now += 86_400_000;
     expect(await providerQuota()).toEqual({ allowed: true, retryAfterSeconds: 0 });
   });
+
+  test("reserves local provider quota and pacing together for development", async () => {
+    let now = 10_000;
+    const store = new MemoryGeocodeStore({ now: () => now });
+
+    expect(await store.reserveProviderAccess(1, 86_400, 1_000)).toEqual({
+      allowed: true,
+      retryAfterMs: 0,
+      reason: "allowed"
+    });
+    expect(await store.reserveProviderAccess(1, 86_400, 1_000)).toMatchObject({
+      allowed: false,
+      reason: "quota"
+    });
+    now += 86_400_000;
+    expect(await store.reserveProviderAccess(2, 86_400, 1_000)).toEqual({
+      allowed: true,
+      retryAfterMs: 0,
+      reason: "allowed"
+    });
+    expect(await store.reserveProviderAccess(2, 86_400, 1_000)).toEqual({
+      allowed: false,
+      retryAfterMs: 1_000,
+      reason: "slot"
+    });
+  });
 });

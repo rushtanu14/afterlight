@@ -40,6 +40,7 @@ class RecordingStore implements GeocodeStore {
   readonly getKeys: string[] = [];
   readonly setCalls: Array<{ key: string; value: GeocodeCacheEntry; ttlSeconds: number }> = [];
   readonly slotCalls: number[] = [];
+  readonly accessCalls: number[] = [];
 
   constructor(
     private readonly cached: GeocodeCacheEntry | null = null,
@@ -66,6 +67,17 @@ class RecordingStore implements GeocodeStore {
   async reserveProviderSlot(minimumIntervalMs: number) {
     this.slotCalls.push(minimumIntervalMs);
     return { ...this.slot };
+  }
+
+  async reserveProviderAccess(_limit: number, _windowSeconds: number, minimumIntervalMs: number) {
+    this.accessCalls.push(minimumIntervalMs);
+    if (!this.providerQuota.allowed) {
+      return { allowed: false as const, retryAfterMs: this.providerQuota.retryAfterSeconds * 1_000, reason: "quota" as const };
+    }
+    if (!this.slot.allowed) {
+      return { allowed: false as const, retryAfterMs: this.slot.retryAfterMs, reason: "slot" as const };
+    }
+    return { allowed: true as const, retryAfterMs: 0 as const, reason: "allowed" as const };
   }
 
   async reserveClientQuota() {
@@ -183,7 +195,8 @@ describe("geocoder proxy", () => {
       set: vi.fn(async () => undefined),
       reserveClientQuota,
       reserveProviderQuota,
-      reserveProviderSlot: vi.fn(async () => ({ allowed: true, retryAfterMs: 0 }))
+      reserveProviderSlot: vi.fn(async () => ({ allowed: true, retryAfterMs: 0 })),
+      reserveProviderAccess: vi.fn(async () => ({ allowed: true, retryAfterMs: 0, reason: "allowed" }))
     } as unknown as GeocodeStore;
     const { handle, fetcher } = handler(store);
 
@@ -211,7 +224,7 @@ describe("geocoder proxy", () => {
     expect(upstream.url).toContain("q=Pasadena");
     expect(upstream.headers.get("user-agent")).toBe(PROVIDER_USER_AGENT);
     expect(upstream.redirect).toBe("error");
-    expect(store.slotCalls).toEqual([1_000]);
+    expect(store.accessCalls).toEqual([1_000]);
     expect(store.setCalls).toHaveLength(1);
     expect(store.setCalls[0]?.key).not.toContain("Pasadena");
     expect(JSON.stringify(store.setCalls[0]?.value)).not.toContain("display_name");
@@ -308,7 +321,8 @@ describe("geocoder proxy", () => {
       set: vi.fn(async () => undefined),
       reserveClientQuota: vi.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
       reserveProviderQuota: vi.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
-      reserveProviderSlot: vi.fn(async () => ({ allowed: true, retryAfterMs: 0 }))
+      reserveProviderSlot: vi.fn(async () => ({ allowed: true, retryAfterMs: 0 })),
+      reserveProviderAccess: vi.fn(async () => ({ allowed: true, retryAfterMs: 0, reason: "allowed" }))
     };
     const { handle, fetcher } = handler(store);
 
@@ -329,7 +343,8 @@ describe("geocoder proxy", () => {
       set: vi.fn(async () => undefined),
       reserveClientQuota: vi.fn(() => never),
       reserveProviderQuota: vi.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
-      reserveProviderSlot: vi.fn(async () => ({ allowed: true, retryAfterMs: 0 }))
+      reserveProviderSlot: vi.fn(async () => ({ allowed: true, retryAfterMs: 0 })),
+      reserveProviderAccess: vi.fn(async () => ({ allowed: true, retryAfterMs: 0, reason: "allowed" }))
     };
     const { handle } = handler(store, undefined, { totalDeadlineMs: 20 });
 
@@ -357,7 +372,7 @@ describe("geocoder proxy", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  test("rejects exhausted provider capacity only after a cache miss", async () => {
+  test("rejects exhausted provider capacity after a cache miss without consuming the provider slot", async () => {
     const store = new RecordingStore(
       null,
       { allowed: true, retryAfterMs: 0 },
@@ -371,6 +386,46 @@ describe("geocoder proxy", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("3600");
     expect(store.getKeys).toHaveLength(2);
+    expect(store.slotCalls).toEqual([]);
+    expect(store.accessCalls).toEqual([1_000]);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  test("returns a cache hit without fetching when another request fills the cache while waiting", async () => {
+    let now = 0;
+    const cached: GeocodeCacheEntry = {
+      kind: "location",
+      location: { label: "Pasadena, Los Angeles County, California", latitude: 34.1478, longitude: -118.1445 }
+    };
+    const get = vi.fn(async () => (get.mock.calls.length >= 3 ? cached : null));
+    const reserveProviderAccess = vi.fn(async () => ({
+      allowed: false as const,
+      retryAfterMs: 1_000,
+      reason: "slot" as const
+    }));
+    const sleep = vi.fn(async (milliseconds: number) => {
+      now += milliseconds;
+    });
+    const store: GeocodeStore = {
+      get,
+      set: vi.fn(async () => undefined),
+      reserveClientQuota: vi.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
+      reserveProviderQuota: vi.fn(async () => ({ allowed: true, retryAfterSeconds: 0 })),
+      reserveProviderSlot: vi.fn(async () => ({ allowed: true, retryAfterMs: 0 })),
+      reserveProviderAccess
+    };
+    const { handle, fetcher } = handler(store, undefined, {
+      now: () => now,
+      sleep,
+      queueLimitMs: 2_000
+    });
+
+    const response = await handle(post("Pasadena"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ success: true, meta: { cache: "hit" } });
+    expect(reserveProviderAccess).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(1_000);
     expect(fetcher).not.toHaveBeenCalled();
   });
 

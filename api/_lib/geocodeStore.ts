@@ -7,6 +7,9 @@ export type QuotaReservation = {
   allowed: boolean;
   retryAfterSeconds: number;
 };
+export type ProviderAccessReservation =
+  | { allowed: true; retryAfterMs: 0; reason: "allowed" }
+  | { allowed: false; retryAfterMs: number; reason: "quota" | "slot" };
 
 export interface GeocodeStore {
   get(key: string): Promise<GeocodeCacheEntry | null>;
@@ -18,6 +21,11 @@ export interface GeocodeStore {
   ): Promise<QuotaReservation>;
   reserveProviderQuota(limit: number, windowSeconds: number): Promise<QuotaReservation>;
   reserveProviderSlot(minimumIntervalMs: number): Promise<ProviderSlot>;
+  reserveProviderAccess(
+    limit: number,
+    windowSeconds: number,
+    minimumIntervalMs: number
+  ): Promise<ProviderAccessReservation>;
 }
 
 export interface RedisLike {
@@ -48,6 +56,27 @@ if count > tonumber(ARGV[1]) then
   return {0, math.max(ttl, 1)}
 end
 return {1, 0}
+`;
+
+const RESERVE_PROVIDER_ACCESS_SCRIPT = `
+local now = redis.call('TIME')
+local now_ms = now[1] * 1000 + math.floor(now[2] / 1000)
+local quota_limit = tonumber(ARGV[1])
+local quota_window = tonumber(ARGV[2])
+local interval = tonumber(ARGV[3])
+local count = tonumber(redis.call('GET', KEYS[1]) or '0')
+local ttl = redis.call('TTL', KEYS[1])
+if count >= quota_limit then
+  return {0, math.max(ttl, 1) * 1000, 'quota'}
+end
+local last = tonumber(redis.call('GET', KEYS[2]) or '0')
+if last > 0 and now_ms - last < interval then
+  return {0, interval - (now_ms - last), 'slot'}
+end
+count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('EXPIRE', KEYS[1], quota_window) end
+redis.call('SET', KEYS[2], now_ms, 'PX', interval * 2)
+return {1, 0, 'allowed'}
 `;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -108,6 +137,26 @@ function parseQuotaReservation(value: unknown): QuotaReservation {
   return { allowed: allowed === 1, retryAfterSeconds: Math.ceil(retryAfterSeconds) };
 }
 
+function parseProviderAccessReservation(value: unknown): ProviderAccessReservation {
+  if (!Array.isArray(value) || value.length < 3) throw new Error("Invalid provider access response.");
+  const allowed = Number(value[0]);
+  const retryAfterMs = Number(value[1]);
+  const reason = value[2];
+  if (
+    (allowed !== 0 && allowed !== 1) ||
+    !Number.isFinite(retryAfterMs) ||
+    retryAfterMs < 0 ||
+    (allowed === 1 && (retryAfterMs !== 0 || reason !== "allowed")) ||
+    (allowed === 0 && retryAfterMs < 1) ||
+    (allowed === 0 && reason !== "quota" && reason !== "slot")
+  ) {
+    throw new Error("Invalid provider access response.");
+  }
+  return allowed === 1
+    ? { allowed: true, retryAfterMs: 0, reason: "allowed" }
+    : { allowed: false, retryAfterMs: Math.ceil(retryAfterMs), reason };
+}
+
 export class RedisGeocodeStore implements GeocodeStore {
   constructor(private readonly redis: RedisLike) {}
 
@@ -140,6 +189,15 @@ export class RedisGeocodeStore implements GeocodeStore {
   async reserveProviderSlot(minimumIntervalMs: number) {
     const result = await this.redis.eval(RESERVE_PROVIDER_SLOT_SCRIPT, [PROVIDER_SLOT_KEY], [minimumIntervalMs]);
     return parseProviderSlot(result);
+  }
+
+  async reserveProviderAccess(limit: number, windowSeconds: number, minimumIntervalMs: number) {
+    const result = await this.redis.eval(
+      RESERVE_PROVIDER_ACCESS_SCRIPT,
+      [PROVIDER_QUOTA_KEY, PROVIDER_SLOT_KEY],
+      [limit, windowSeconds, minimumIntervalMs]
+    );
+    return parseProviderAccessReservation(result);
   }
 }
 
@@ -221,5 +279,30 @@ export class MemoryGeocodeStore implements GeocodeStore {
     }
     this.lastProviderRequestAt = now;
     return { allowed: true, retryAfterMs: 0 };
+  }
+
+  async reserveProviderAccess(
+    limit: number,
+    windowSeconds: number,
+    minimumIntervalMs: number
+  ): Promise<ProviderAccessReservation> {
+    const now = this.now();
+    if (this.providerQuota.expiresAt <= now) {
+      this.providerQuota = { count: 0, expiresAt: now + windowSeconds * 1_000 };
+    }
+    if (this.providerQuota.count >= limit) {
+      return {
+        allowed: false,
+        retryAfterMs: Math.max(1_000, this.providerQuota.expiresAt - now),
+        reason: "quota"
+      };
+    }
+    const elapsed = now - this.lastProviderRequestAt;
+    if (elapsed < minimumIntervalMs) {
+      return { allowed: false, retryAfterMs: minimumIntervalMs - elapsed, reason: "slot" };
+    }
+    this.providerQuota = { ...this.providerQuota, count: this.providerQuota.count + 1 };
+    this.lastProviderRequestAt = now;
+    return { allowed: true, retryAfterMs: 0, reason: "allowed" };
   }
 }
