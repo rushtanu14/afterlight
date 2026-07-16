@@ -49,8 +49,8 @@ Camp Fire has an incident archive, but Afterlight does not invent a timestamped 
 - The browser posts the area text to same-origin `/api/geocode`; the server validates it, uses hashed cache/client keys, applies Redis quotas, and sends it only to the official Nominatim host. The browser then shares returned coordinates/bounds with NIFC WFIGS/ArcGIS, NWS, and NASA EONET. Provider policies and normal request logs apply.
 - Deployed geocoding requires shared Redis and fails closed when that boundary is unavailable. The repository does not claim that a production deployment is configured.
 - Current-source data is held in page state and is not written to household-memory storage.
-- Household confirmations and edits remain on the current device/origin, but they are not encrypted, synchronized, backed up, or protected from other same-origin scripts.
-- Drill data is stored separately under `afterlight.household-drill.v1`; arbitrary decision text is not accepted, and role labels/practice state have the same device-local limitations and must not contain personal or sensitive details.
+- Household confirmations and privacy-guarded edits remain on the current device/origin, but they are not encrypted, synchronized, backed up, or protected from other same-origin scripts.
+- Drill data is stored separately under `afterlight.household-drill.v1`; arbitrary decision text is not accepted, and role labels reject obvious exact address, contact, coordinate, and access-code strings before persistence. Role labels and practice state still have the same device-local limitations and must not contain personal or sensitive details.
 - Standard OpenStreetMap tiles and ArcGIS perimeters require network access. There is no offline tile or emergency-data cache.
 
 ## Exact Non-Claims

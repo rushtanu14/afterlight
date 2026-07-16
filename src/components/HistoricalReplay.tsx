@@ -264,7 +264,8 @@ export function HistoricalReplay({
             />
           </article>
           <p className="memory-storage-note" id="memory-storage-note">
-            Confirmed lessons and edits are stored unencrypted in this browser on this device. Do not enter medical or other sensitive personal details.
+            Confirmed lessons and edits are stored unencrypted in this browser on this device. Obvious exact-address, contact, coordinate, and access-code
+            patterns are rejected, but do not enter sensitive personal details here.
           </p>
           <p className={memoryPersistenceStatus === "error" ? "memory-persistence error" : "memory-persistence"} role="status" aria-live="polite">
             {persistenceMessage}

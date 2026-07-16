@@ -22,7 +22,7 @@ Afterlight is a React/Vite crisis-memory product with three deliberately separat
 - Preserves the row timestamp, source label, source URL, official record text, categorical signal, and case-specific map reference.
 - Uses a categorical detector. Only a recognized, internally consistent evacuation-warning or evacuation-order row can produce `official_action`; every other or unverifiable row fails closed to `prepare`.
 - Shows route names only as historical row memory with categorical states such as `not_stated_in_row`, `access_restricted`, or `blocked`.
-- Stores user-confirmed lessons and free-text edits separately for each scenario in browser `localStorage`.
+- Stores user-confirmed lessons and bounded, privacy-guarded edits separately for each scenario in browser `localStorage`.
 - Starts with no lesson pre-confirmed.
 
 ### Household Drill Builder
@@ -67,7 +67,7 @@ Afterlight has a narrow server boundary for geocoding. The browser posts the ent
 
 Deployed functions require an Upstash-compatible Redis REST store. Positive coarse matches are cached for 30 days; not-found results are cached for five minutes. Redis atomically enforces 20 requests per hashed client key per minute, a 2,000-provider-request 24-hour circuit breaker that cache hits do not consume, and at least 1,000 ms between provider request starts; body, Redis, queue, provider, parsing, and cache writes share one 8.5-second deadline. Same-origin checking is a browser boundary, not bot protection; a deployment-platform WAF rule remains a release requirement. Local `npm run dev` uses bounded in-process state only; deployed code fails closed with `503` if shared Redis is missing.
 
-Historical memory cards are different: confirmations and edits remain in `localStorage` for the current site origin. Drill assignments use a second local key and accept short role labels plus task-specific structured decisions only; arbitrary decision text is neither accepted nor persisted. Neither payload is uploaded by Afterlight, synchronized, encrypted, backed up, or protected from other scripts running on the same origin. Keep names, contacts, routes, exact locations, access codes, and medical details in an official household plan instead.
+Historical memory cards are different: confirmations and privacy-guarded edits remain in `localStorage` for the current site origin. Memory edits and drill role labels reject obvious exact addresses, phone numbers, emails, signed or labeled coordinate pairs, and access-code strings; drill assignments use a second local key and accept short role labels plus task-specific structured decisions only. Arbitrary decision text is neither accepted nor persisted. Neither payload is uploaded by Afterlight, synchronized, encrypted, backed up, or protected from other scripts running on the same origin. Keep names, contacts, routes, exact locations, access codes, and medical details in an official household plan instead.
 
 ## Map and Network Policy
 
@@ -89,6 +89,8 @@ The deterministic run covers the thesis, official rows, a non-persisted memory p
 
 ## Local Setup
 
+Requires Node.js 22 or newer and npm 11.
+
 ```bash
 npm ci
 npm run dev
@@ -107,10 +109,13 @@ Generated from `package.json`.
 |---------|-------------|
 | `npm run dev` | Start the Vite development server on `127.0.0.1`. |
 | `npm run build` | Run TypeScript project build checks, then create the production Vite build in `dist/`. |
+| `npm run build:sites` | Build the Cloudflare Worker and client asset layout. |
 | `npm run preview` | Serve the production build locally with Vite preview on `127.0.0.1`. |
 | `npm run test` | Run the Vitest test suite. |
 | `npm run test:coverage` | Run Vitest with V8 coverage for the unit/integration suite. |
 | `npm run test:e2e` | Run the mocked-source Playwright browser suite in desktop and mobile Chrome. |
+| `npm run dev:sites` | Build and serve the Cloudflare Worker plus static assets locally. |
+| `npm run test:sites` | Build and bundle the Cloudflare deployment without publishing it. |
 <!-- AUTO-GENERATED:END scripts -->
 
 ## Environment
@@ -124,12 +129,15 @@ The browser app uses no API credentials. Deployed geocoding requires server-only
 
 Set secrets in the deployment platform through an authorized project/team owner. Never prefix them with `VITE_`, expose them to the browser, or commit real values. NASA FIRMS remains a separate future server-proxy integration.
 
+The repository supports both Vercel and Cloudflare Workers deployment. `vercel.json` applies the browser security headers on Vercel; `wrangler.jsonc` and `worker/index.ts` apply the same boundary on Cloudflare, serve the Vite SPA, and route `/api/geocode` through the same fail-closed production handler. Configure the Redis secrets with the selected platform before treating its geocoder as operational.
+
 ## Judge Materials
 
 - Judge brief: `docs/judge-brief.md`
 - Demo-only cinematic opening and generation receipt: `docs/demo-cinematic-opening.md`
 - Moonshot paper: `docs/moonshot-paper.md`
 - Vision presentation: `docs/vision-presentation.md`
+- Devpost submission pack: `docs/devpost-submission.md`
 - Operational runbook: `docs/RUNBOOK.md`
 
 ## Honest Limitations

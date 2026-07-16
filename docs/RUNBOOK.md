@@ -32,6 +32,8 @@ Open `http://127.0.0.1:5173`.
 
 ## Production Build and Preview
 
+Cloudflare Workers / Sites is supported by `wrangler.jsonc` and `worker/index.ts`. Run `npm run test:sites` to build and bundle that target without publishing, or `npm run dev:sites` to serve it locally. The Worker serves `dist/` as a single-page application, applies the deployment security headers, and routes `/api/geocode` through the same fail-closed production handler used by Vercel. Add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` as encrypted Worker secrets before deployment; the endpoint returns `503` when shared Redis is absent or invalid.
+
 ```bash
 npm test
 npm run build
@@ -117,7 +119,7 @@ Afterlight stores a versioned payload under:
 afterlight.household-memory.v1
 ```
 
-The payload contains confirmed historical event IDs and free-text edits, grouped by Palisades or Eaton scenario. It is device- and origin-local, not encrypted, not synchronized, not backed up, and has no retention guarantee. It is accessible to any script with access to the same origin. Do not enter exact addresses, health data, access codes, or other sensitive information.
+The payload contains confirmed historical event IDs and bounded, privacy-guarded edits, grouped by Palisades or Eaton scenario. Obvious exact street-address, phone, email, signed or labeled coordinate-pair, and access-code patterns are rejected before persistence. The payload is device- and origin-local, not encrypted, not synchronized, not backed up, and has no retention guarantee. It is accessible to any script with access to the same origin. Do not enter exact addresses, health data, access codes, or other sensitive information.
 
 Use **Clear this case** to remove only the selected scenario or **Clear all device memory** to remove the entire Afterlight payload. Browser site-data controls or DevTools can also remove the key directly:
 
@@ -133,7 +135,7 @@ The drill uses a separate key:
 afterlight.household-drill.v1
 ```
 
-The payload contains selected constraint identifiers, short primary/backup role labels, allowlisted structured decision values, practiced flags, and the last recorded practice date. It does not store live-source results or copy historical source text. Confirmed historical lesson IDs are referenced only while they remain present in case-scoped memory; unconfirming or clearing a lesson purges its hidden drill assignment. Loading the app also reconciles persisted assignments against the current visible task IDs and clears a stale practice date when anything is pruned.
+The payload contains selected constraint identifiers, short privacy-guarded primary/backup role labels, allowlisted structured decision values, practiced flags, and the last recorded practice date. It does not store live-source results or copy historical source text. Confirmed historical lesson IDs are referenced only while they remain present in case-scoped memory; unconfirming or clearing a lesson purges its hidden drill assignment. Loading the app also reconciles persisted assignments against the current visible task IDs and clears a stale practice date when anything is pruned.
 
 - Use role labels such as `Alert checker` or `Pet carrier lead`; choose only the provided coarse decision patterns. The decision control does not accept arbitrary text.
 - Keep names, contact details, routes, exact locations, access codes, device identifiers, and medical details in an official household plan, not Afterlight.

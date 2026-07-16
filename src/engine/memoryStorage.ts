@@ -1,5 +1,6 @@
 import type { HistoricalScenarioId } from "../data/replay";
 import { historicalScenarios } from "../data/historicalScenarios";
+import { sanitizeHouseholdText } from "./privacyText";
 
 export type ScenarioMemory = {
   confirmedIds: string[];
@@ -43,7 +44,8 @@ function sanitizeScenarioMemory(value: unknown, scenarioId: HistoricalScenarioId
     ? Object.fromEntries(
         Object.entries(value.edits)
           .filter((entry): entry is [string, string] => allowedEventIds.has(entry[0]) && typeof entry[1] === "string")
-          .map(([eventId, edit]) => [eventId, edit.slice(0, MAX_MEMORY_EDIT_LENGTH)])
+          .map(([eventId, edit]) => [eventId, sanitizeHouseholdText(edit, MAX_MEMORY_EDIT_LENGTH, { trim: false })])
+          .filter(([, edit]) => edit.length > 0)
       )
     : {};
 
@@ -75,13 +77,32 @@ function browserStorage(): MemoryStorage | null {
 export function loadMemoryState(storage: MemoryStorage | null = browserStorage()): MemoryState {
   if (!storage) return { version: 1, scenarios: {} };
 
+  let saved: string | null;
   try {
-    const saved = storage.getItem(MEMORY_STORAGE_KEY);
-    if (!saved || saved.length > MAX_MEMORY_PAYLOAD_LENGTH) return { version: 1, scenarios: {} };
-    return sanitizeMemoryState(JSON.parse(saved) as unknown);
+    saved = storage.getItem(MEMORY_STORAGE_KEY);
   } catch {
     return { version: 1, scenarios: {} };
   }
+  if (!saved) return { version: 1, scenarios: {} };
+  if (saved.length > MAX_MEMORY_PAYLOAD_LENGTH) {
+    try { storage.removeItem(MEMORY_STORAGE_KEY); } catch { /* Best-effort cleanup. */ }
+    return { version: 1, scenarios: {} };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(saved) as unknown;
+  } catch {
+    try { storage.removeItem(MEMORY_STORAGE_KEY); } catch { /* Best-effort cleanup. */ }
+    return { version: 1, scenarios: {} };
+  }
+
+  const sanitized = sanitizeMemoryState(parsed);
+  const serialized = JSON.stringify(sanitized);
+  if (serialized !== saved) {
+    try { storage.setItem(MEMORY_STORAGE_KEY, serialized); } catch { /* State remains sanitized in memory. */ }
+  }
+  return sanitized;
 }
 
 export function saveMemoryState(state: MemoryState, storage: MemoryStorage | null = browserStorage()) {

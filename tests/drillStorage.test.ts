@@ -117,6 +117,56 @@ describe("household drill storage", () => {
     expect(sanitized.lastPracticedOn).toBeNull();
   });
 
+  test("drops private household details from stored role labels", () => {
+    const sanitized = sanitizeDrillState({
+      version: 1,
+      constraints: [],
+      assignments: {
+        "base:official-sources": {
+          ownerRole: "Alert checker",
+          backupRole: "Backup 555-123-4567",
+          actionNote: "County alerts plus local fire agency",
+          practiced: true
+        },
+        "base:kit-location": {
+          ownerRole: "Kit lead",
+          backupRole: "Meet at 123 Main Street",
+          actionNote: "Visible indoor kit plus seasonal check",
+          practiced: true
+        }
+      },
+      lastPracticedOn: "2026-07-12"
+    });
+
+    expect(sanitized.assignments["base:official-sources"]?.backupRole).toBe("");
+    expect(sanitized.assignments["base:official-sources"]?.practiced).toBe(false);
+    expect(sanitized.assignments["base:kit-location"]?.backupRole).toBe("");
+    expect(sanitized.assignments["base:kit-location"]?.practiced).toBe(false);
+    expect(sanitized.lastPracticedOn).toBeNull();
+  });
+
+  test("rewrites legacy drill storage after removing private details", () => {
+    const storage = createStorage(JSON.stringify({
+      version: 1,
+      constraints: [],
+      assignments: {
+        "base:official-sources": {
+          ownerRole: "Alert checker",
+          backupRole: "Call +44 20 7946 0958 with PIN 1234",
+          actionNote: "County alerts plus local fire agency",
+          practiced: true
+        }
+      },
+      lastPracticedOn: "2026-07-12"
+    }));
+
+    const state = loadDrillState(storage);
+    expect(state.assignments["base:official-sources"]?.backupRole).toBe("");
+    expect(state.assignments["base:official-sources"]?.practiced).toBe(false);
+    expect(storage.value).not.toContain("+44 20 7946 0958");
+    expect(storage.value).not.toContain("PIN 1234");
+  });
+
   test("drops malformed assignment shapes and non-array constraints", () => {
     const sanitized = sanitizeDrillState({
       version: 1,

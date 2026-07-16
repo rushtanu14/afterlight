@@ -52,9 +52,9 @@ This is a deterministic category/attribution check, not a model-accuracy, outcom
 
 ## Household Memory
 
-Users can confirm a historical lesson and edit its future-memory text. The app stores confirmations and edits in versioned browser `localStorage`, scoped separately to Palisades and Eaton. Nothing is pre-confirmed.
+Users can confirm a historical lesson and edit its future-memory text. The app stores confirmations and bounded, privacy-guarded edits in versioned browser `localStorage`, scoped separately to Palisades and Eaton. Nothing is pre-confirmed.
 
-Device-local does not mean secure. The data is not encrypted, synchronized, backed up, or protected from other scripts on the same origin. It can disappear when site data is cleared and has no retention or export workflow. Users should not enter exact addresses, medical details, credentials, or other sensitive data.
+Device-local does not mean secure. Obvious exact addresses, phone numbers, emails, signed or labeled coordinate pairs, and access-code strings are rejected before persistence, but the data is still not encrypted, synchronized, backed up, or protected from other scripts on the same origin. It can disappear when site data is cleared and has no retention or export workflow. Users should not enter names, medical details, credentials, or other sensitive data.
 
 ## Household Drill
 

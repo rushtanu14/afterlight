@@ -76,13 +76,32 @@ function browserStorage(): DrillStorage | null {
 
 export function loadDrillState(storage: DrillStorage | null = browserStorage()): DrillState {
   if (!storage) return { ...EMPTY_DRILL_STATE, constraints: [], assignments: {} };
+  let saved: string | null;
   try {
-    const saved = storage.getItem(DRILL_STORAGE_KEY);
-    if (!saved || saved.length > MAX_DRILL_PAYLOAD_LENGTH) return { ...EMPTY_DRILL_STATE, constraints: [], assignments: {} };
-    return sanitizeDrillState(JSON.parse(saved) as unknown);
+    saved = storage.getItem(DRILL_STORAGE_KEY);
   } catch {
     return { ...EMPTY_DRILL_STATE, constraints: [], assignments: {} };
   }
+  if (!saved) return { ...EMPTY_DRILL_STATE, constraints: [], assignments: {} };
+  if (saved.length > MAX_DRILL_PAYLOAD_LENGTH) {
+    try { storage.removeItem(DRILL_STORAGE_KEY); } catch { /* Best-effort cleanup. */ }
+    return { ...EMPTY_DRILL_STATE, constraints: [], assignments: {} };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(saved) as unknown;
+  } catch {
+    try { storage.removeItem(DRILL_STORAGE_KEY); } catch { /* Best-effort cleanup. */ }
+    return { ...EMPTY_DRILL_STATE, constraints: [], assignments: {} };
+  }
+
+  const sanitized = sanitizeDrillState(parsed);
+  const serialized = JSON.stringify(sanitized);
+  if (serialized !== saved) {
+    try { storage.setItem(DRILL_STORAGE_KEY, serialized); } catch { /* State remains sanitized in memory. */ }
+  }
+  return sanitized;
 }
 
 export function saveDrillState(state: DrillState, storage: DrillStorage | null = browserStorage()) {

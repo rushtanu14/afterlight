@@ -94,10 +94,89 @@ describe("case-scoped household memory", () => {
     });
   });
 
+  test("drops private household details from memory edits before persistence", () => {
+    const state = sanitizeMemoryState({
+      version: 1,
+      scenarios: {
+        "palisades-2025": {
+          confirmedIds: ["palisades-warning-zones"],
+          edits: {
+            "palisades-warning-zones": "Meet at 123 Main Street after calling 555-123-4567",
+            "palisades-order-to-pch": "Use the same out-of-area check-in role."
+          }
+        }
+      }
+    });
+
+    expect(state.scenarios["palisades-2025"]?.edits).toEqual({
+      "palisades-order-to-pch": "Use the same out-of-area check-in role."
+    });
+  });
+
+  test("rewrites legacy memory after removing private details", () => {
+    const storage = createStorage(JSON.stringify({
+      version: 1,
+      scenarios: {
+        "palisades-2025": {
+          confirmedIds: ["palisades-warning-zones"],
+          edits: {
+            "palisades-warning-zones": "Call +44 20 7946 0958 with PIN 1234",
+            "palisades-order-to-pch": "Use the out-of-area check-in role."
+          }
+        }
+      }
+    }));
+
+    expect(loadMemoryState(storage).scenarios["palisades-2025"]?.edits).toEqual({
+      "palisades-order-to-pch": "Use the out-of-area check-in role."
+    });
+    expect(storage.value).not.toContain("+44 20 7946 0958");
+    expect(storage.value).not.toContain("PIN 1234");
+  });
+
+  test("keeps ordinary numbered instructions while rejecting broader obvious secrets", () => {
+    const state = sanitizeMemoryState({
+      version: 1,
+      scenarios: {
+        "palisades-2025": {
+          confirmedIds: [],
+          edits: {
+            "palisades-warning-zones": "Bring 2, 3 backup batteries and 2.5, 3.5 gallon water containers. Pin alerts to the home screen.",
+            "palisades-order-to-pch": "Call 555-1234; door password sunset",
+            "palisades-fire-reported": "Location 34, -118"
+          }
+        }
+      }
+    });
+
+    expect(state.scenarios["palisades-2025"]?.edits).toEqual({
+      "palisades-warning-zones": "Bring 2, 3 backup batteries and 2.5, 3.5 gallon water containers. Pin alerts to the home screen."
+    });
+  });
+
+  test("rejects integer and short-decimal coordinate pairs when they are coordinate-like", () => {
+    const state = sanitizeMemoryState({
+      version: 1,
+      scenarios: {
+        "palisades-2025": {
+          confirmedIds: [],
+          edits: {
+            "palisades-warning-zones": "Meet near 34, -118",
+            "palisades-order-to-pch": "Meet near 34.05, -118.24",
+            "palisades-fire-reported": "Coordinates: 34.05, 118.24"
+          }
+        }
+      }
+    });
+
+    expect(state.scenarios["palisades-2025"]?.edits).toEqual({});
+  });
+
   test("rejects an oversized persisted payload before parsing it", () => {
     const oversized = createStorage("x".repeat(MAX_MEMORY_PAYLOAD_LENGTH + 1));
 
     expect(loadMemoryState(oversized)).toEqual(EMPTY_MEMORY_STATE);
+    expect(oversized.value).toBeNull();
   });
 
   test("clears one case immutably and can remove all persisted memory", () => {

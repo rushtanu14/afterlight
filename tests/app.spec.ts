@@ -400,6 +400,28 @@ test("keeps the drill date for unconfirmed edits and clears it when the task set
   await expect(practice.getByRole("status")).toContainText("No household practice date recorded");
 });
 
+test("rejects private household details from memory edits and drill roles", async ({ page }) => {
+  await page.goto("/");
+
+  const edit = page.locator(".failure-card textarea");
+  await edit.fill("Meet at 123 Main Street and call 555-123-4567");
+  await expect(edit).not.toHaveValue(/123 Main Street/);
+  expect(await page.evaluate(() => localStorage.getItem("afterlight.household-memory.v1") ?? "")).not.toContain("123 Main Street");
+  await expect(page.locator(".memory-storage-note")).toContainText("Obvious exact-address");
+
+  const practice = page.locator("#practice");
+  const owner = practice.getByRole("textbox", { name: "Primary owner role for Choose official information channels" });
+  const backup = practice.getByRole("textbox", { name: "Backup owner role for Choose official information channels" });
+  await owner.fill("Alert checker");
+  await backup.fill("Backup 555-123-4567");
+  await expect(backup).toHaveValue("");
+  await practice.getByRole("combobox", { name: "Household decision for Choose official information channels" }).selectOption("County alerts plus local fire agency");
+  await expect(practice.getByRole("checkbox", { name: "Mark Choose official information channels as practiced" })).toBeDisabled();
+  const savedDrill = await page.evaluate(() => localStorage.getItem("afterlight.household-drill.v1") ?? "");
+  expect(savedDrill).not.toContain("555-123-4567");
+  await expect(practice).not.toContainText("555-123-4567");
+});
+
 test("renders incident-specific historical maps, evaluation rows, and the Camp negative control", async ({ page }) => {
   await page.goto("/");
 

@@ -3,13 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "npm@11.12.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:sites": "npm run build:sites && wrangler dev",
     "build": "tsc -b && vite build",
+    "build:sites": "tsc -b && vite build --mode sites",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run --exclude tests/app.spec.ts",
     "test:coverage": "vitest run --coverage --exclude tests/app.spec.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:sites": "npm run build:sites && wrangler deploy --dry-run"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",
@@ -21,13 +28,15 @@
     "vite": "^7.0.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "1.45.0",
     "@playwright/test": "^1.61.1",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^26.1.1",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitest/coverage-v8": "^4.1.10",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "wrangler": "4.111.0"
   },
   "overrides": {
     "esbuild": "^0.28.1"

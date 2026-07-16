@@ -42,9 +42,9 @@ That refusal is part of the technical proof.
 
 ## Slide 6: Household Memory Becomes Assigned Practice
 
-A user can confirm a historical lesson and edit its future-memory text. Confirmations and edits stay scenario-scoped in browser `localStorage`.
+A user can confirm a historical lesson and edit its future-memory text. Confirmations and privacy-guarded edits stay scenario-scoped in browser `localStorage`.
 
-They are not encrypted, synchronized, backed up, or suitable for exact addresses, medical details, or other sensitive data.
+They reject obvious exact address, contact, coordinate, and access-code strings before persistence, but they are not encrypted, synchronized, backed up, or suitable for names, medical details, or other sensitive data.
 
 A separate drill payload adds baseline and constraint-specific tasks, one coarse household decision plus primary and backup roles per task, practiced handoffs, a practice date, and a printable card. Editing a decision or role invalidates its prior practice mark. User-edited historical text is labeled as a household adaptation, unresolved tasks stay visible, and there is no readiness score or safety certification.
 

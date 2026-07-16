@@ -4,6 +4,8 @@ Afterlight is a Vite + React + TypeScript frontend with strict safety and eviden
 
 ## Setup
 
+Use Node.js 22 or newer and npm 11.
+
 ```bash
 npm ci
 npm run dev
@@ -20,10 +22,13 @@ Generated from `package.json`.
 |---------|-------------|
 | `npm run dev` | Start the Vite development server on `127.0.0.1`. |
 | `npm run build` | Run TypeScript project build checks, then create the production Vite build in `dist/`. |
+| `npm run build:sites` | Build the Cloudflare Worker and client asset layout. |
 | `npm run preview` | Serve the production build locally with Vite preview on `127.0.0.1`. |
 | `npm run test` | Run the Vitest test suite. |
 | `npm run test:coverage` | Run Vitest with V8 coverage for the unit/integration suite. |
 | `npm run test:e2e` | Run the mocked-source Playwright browser suite in desktop and mobile Chrome. |
+| `npm run dev:sites` | Build and serve the Cloudflare Worker plus static assets locally. |
+| `npm run test:sites` | Build and bundle the Cloudflare deployment without publishing it. |
 <!-- AUTO-GENERATED:END scripts -->
 
 ## Environment and Secrets
@@ -62,6 +67,8 @@ Generated from `src/`.
 | `src/engine/judgeMode.ts` | Defines the deterministic 90-second proof schedule. |
 | `src/styles.css` | Contains the charcoal/ember visual system, responsive behavior, and reduced-motion rules. |
 | `vercel.json` | Defines production document security headers for the Vercel deployment path. |
+| `worker/index.ts` | Serves the Cloudflare SPA, applies deployment headers, normalizes trusted client identity, and routes the geocoder. |
+| `wrangler.jsonc` | Defines the Cloudflare Worker, compatibility flags, and static asset binding. |
 <!-- AUTO-GENERATED:END source-layout -->
 
 ## Non-Negotiable Safety Rules
@@ -90,10 +97,10 @@ Generated from `src/`.
 - Keep cache keys one-way hashed, cache values minimized, and raw queries out of logs, storage keys, errors, and response metadata.
 - Keep the geocoder provider on the fixed official Nominatim host, reject redirects, and reject credentials, private/local hosts, query strings, and fragments.
 - Keep user-facing errors redacted: no API key, raw request URL, exact address, or query-coordinate leakage.
-- Treat `localStorage` memory as untrusted, device-local convenience data—not secure storage.
+- Treat `localStorage` memory as untrusted, device-local convenience data, not secure storage.
 - Keep `?judge=1` fully ephemeral: do not load, render, overwrite, or clear saved household memory or drill payloads from the demo surface.
 - Do not add medical, identity, exact-address, or access-code fields to household memory without a new privacy/security design.
-- Drill decisions must remain task-specific allowlisted choices; arbitrary decision text must fail closed during updates and storage sanitization. Do not add full-name, phone, route, exact-address, medication-detail, access-code, or live-location fields.
+- Memory edits and drill role labels must reject obvious exact street addresses, phone numbers, emails, signed or labeled coordinate pairs, and access-code strings before persistence. Drill decisions must remain task-specific allowlisted choices; arbitrary decision text must fail closed during updates and storage sanitization. Do not add full-name, phone, route, exact-address, medication-detail, access-code, or live-location fields.
 - Keep `afterlight.household-memory.v1` and `afterlight.household-drill.v1` separate and independently clearable.
 - Purge a historical lesson's drill assignment when that lesson is unconfirmed or its case memory is cleared.
 - Keep scenario updates immutable and scenario-scoped.

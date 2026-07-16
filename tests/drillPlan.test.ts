@@ -121,6 +121,34 @@ describe("household drill plan", () => {
     expect(state.assignments["base:official-sources"]?.ownerRole).not.toMatch(/[\r\n]/);
   });
 
+  test("rejects private household details from persisted role labels", () => {
+    const withPhone = updateDrillAssignment(EMPTY_DRILL_STATE, "base:official-sources", {
+      ownerRole: "Alert checker 555-123-4567",
+      backupRole: "Backup adult",
+      actionNote: "County alerts plus local fire agency",
+      practiced: true
+    });
+    const withAddress = updateDrillAssignment(EMPTY_DRILL_STATE, "base:contact-fallback", {
+      ownerRole: "Check-in lead",
+      backupRole: "Meet at 123 Main Street",
+      actionNote: "Group message plus out-of-area check-in",
+      practiced: true
+    });
+
+    expect(withPhone.assignments["base:official-sources"]).toEqual({
+      ownerRole: "",
+      backupRole: "Backup adult",
+      actionNote: "County alerts plus local fire agency",
+      practiced: false
+    });
+    expect(withAddress.assignments["base:contact-fallback"]).toEqual({
+      ownerRole: "Check-in lead",
+      backupRole: "",
+      actionNote: "Group message plus out-of-area check-in",
+      practiced: false
+    });
+  });
+
   test("accepts only task-specific structured decisions", () => {
     expect(isAllowedDrillActionNote("base:official-sources", "County alerts plus local fire agency")).toBe(true);
     expect(isAllowedDrillActionNote("base:official-sources", "")).toBe(true);

@@ -1,3 +1,5 @@
+import { containsPrivateHouseholdDetail, normalizeSingleLineText, sanitizeHouseholdText } from "./privacyText";
+
 export type ConstraintId = "mobility" | "medications" | "pets" | "power" | "transport";
 
 export type DrillAssignment = {
@@ -143,12 +145,8 @@ const constraintTasks: Record<ConstraintId, DrillTask> = {
   }
 };
 
-function normalizeSingleLineDraft(value: string, maxLength: number) {
-  return value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").slice(0, maxLength);
-}
-
 export function sanitizeRoleLabel(value: string) {
-  return normalizeSingleLineDraft(value, MAX_DRILL_ROLE_LENGTH).trim();
+  return sanitizeHouseholdText(value, MAX_DRILL_ROLE_LENGTH);
 }
 
 export function getDrillActionOptions(taskId: string): readonly string[] {
@@ -158,12 +156,12 @@ export function getDrillActionOptions(taskId: string): readonly string[] {
 }
 
 export function isAllowedDrillActionNote(taskId: string, value: string) {
-  const normalized = normalizeSingleLineDraft(value, MAX_DRILL_ACTION_LENGTH).trim();
+  const normalized = normalizeSingleLineText(value, MAX_DRILL_ACTION_LENGTH).trim();
   return normalized === "" || getDrillActionOptions(taskId).includes(normalized);
 }
 
 export function sanitizeActionNote(taskId: string, value: string) {
-  const sanitized = normalizeSingleLineDraft(value, MAX_DRILL_ACTION_LENGTH).trim();
+  const sanitized = normalizeSingleLineText(value, MAX_DRILL_ACTION_LENGTH).trim();
   return isAllowedDrillActionNote(taskId, sanitized) ? sanitized : "";
 }
 
@@ -208,9 +206,11 @@ export function updateDrillAssignment(
 ): DrillState {
   if (!isDrillTaskId(taskId)) return state;
   const current = state.assignments[taskId] ?? { ownerRole: "", backupRole: "", actionNote: "", practiced: false };
-  const ownerRole = normalizeSingleLineDraft(update.ownerRole ?? current.ownerRole, MAX_DRILL_ROLE_LENGTH);
-  const backupRole = normalizeSingleLineDraft(update.backupRole ?? current.backupRole, MAX_DRILL_ROLE_LENGTH);
-  const requestedActionNote = normalizeSingleLineDraft(update.actionNote ?? current.actionNote, MAX_DRILL_ACTION_LENGTH).trim();
+  const ownerRoleDraft = normalizeSingleLineText(update.ownerRole ?? current.ownerRole, MAX_DRILL_ROLE_LENGTH);
+  const backupRoleDraft = normalizeSingleLineText(update.backupRole ?? current.backupRole, MAX_DRILL_ROLE_LENGTH);
+  const ownerRole = containsPrivateHouseholdDetail(ownerRoleDraft) ? "" : ownerRoleDraft;
+  const backupRole = containsPrivateHouseholdDetail(backupRoleDraft) ? "" : backupRoleDraft;
+  const requestedActionNote = normalizeSingleLineText(update.actionNote ?? current.actionNote, MAX_DRILL_ACTION_LENGTH).trim();
   const actionNote = update.actionNote === undefined || isAllowedDrillActionNote(taskId, requestedActionNote)
     ? requestedActionNote
     : current.actionNote;
