@@ -1,12 +1,45 @@
-# Afterlight Devpost Submission Pack
+# Afterlight — Hoobit Hacks 2026 Submission Pack
 
 Verified on July 16, 2026.
 
 ## Submission Status
 
-The intended [Moonshot Hackathon](https://moonshot-aethra.devpost.com/) is closed. Its organizers extended the final submission deadline from June 30 to July 5, 2026, then stated that the extension was final. Do not describe Afterlight as submitted to Moonshot unless the organizers explicitly reopen the event.
+Afterlight is **already submitted** to [Hoobit Hacks 2026](https://hoobit-hacks-2026.devpost.com/). The authenticated Devpost record shows it was published and submitted on July 5, 2026. Edit the existing [Afterlight project](https://devpost.com/software/afterlight-clq3uz); do not create a duplicate. Corrections remain possible while submissions are open, until **July 18, 2026 at 8:00 PM CEST / 11:00 AM PDT**.
 
-You can still publish Afterlight as a Devpost portfolio project now, then import that project into a future eligible hackathon. Use [Devpost's project-entry guide](https://help.devpost.com/article/122-how-to-enter-a-submission) for a future event or [Devpost's portfolio guide](https://help.devpost.com/article/116-adding-projects-to-your-portfolio) for the portfolio-only route.
+The live submission needs correction before judging. Its current public copy predates the trust-hardening work and still claims `leave before` signals, safer-route context, hazard/route scoring, decision support, and optional browser-side NASA FIRMS. Those claims no longer match the repository and cross the product's current safety boundaries. It also has no video URL and its only submitted website link is the GitHub repository; the working Sites deployment is owner-only and returns HTTP `401` to signed-out judges.
+
+Afterlight is a strong social-good and problem fit, but its **AI eligibility is unresolved**. Hoobit asks for an AI-powered tool; Afterlight's runtime detector is deliberately deterministic and does not call a generative or machine-learning model. Using AI during development does not make the submitted product AI-powered. Ask the organizers in a Discord ticket whether this architecture qualifies before submitting; do not label the detector as AI unless they explicitly accept that interpretation.
+
+The Git history shows that Afterlight was started on July 2, 2026, inside Hoobit's published submission window. A separate unpublished Moonshot submission draft exists on Devpost. Because Hoobit rejects uncited resubmissions and requires original work, disclose that history exactly; do not imply the project was conceived specifically for Hoobit.
+
+Before submitting, confirm both the current event theme and AI eligibility in the Hoobit Discord. The public Devpost overview still shows its theme section as unreleased even though the event is active. If the announced theme does not cover disaster preparedness, ask the organizers whether Afterlight qualifies.
+
+## Hoobit Eligibility and Required Fields
+
+- Every participant must be a student and age 13–24. A guardian's consent is expected for minors.
+- The prototype or a short YouTube demo must be publicly accessible.
+- The submitted code must stay public on GitHub until at least **August 26, 2026**, one month after the scheduled July 26 winner announcement.
+- Join the [Hoobit Discord](https://discord.gg/ZdZhurPz2b) and follow its rules.
+- Provide every team member's legal name, contact email, Discord username, GitHub username, age, educational institution, and country in the submission form.
+- Disclose every material use of AI and cite third-party data, statistics, images, and prior work.
+- Read the [event overview](https://hoobit-hacks-2026.devpost.com/), [rules](https://hoobit-hacks-2026.devpost.com/rules), [schedule](https://hoobit-hacks-2026.devpost.com/details/dates), and any organizer announcements immediately before the final click.
+
+Personal details to have ready; do not commit them to this repository:
+
+```text
+Full legal name:
+Contact email:
+Discord username:
+GitHub username: rushtanu14
+Age:
+Current educational institution:
+Country:
+Guardian consent confirmed, if under 18: yes / not applicable
+```
+
+Discord ticket message; send this in your own voice:
+
+> Hi, I am preparing an entry called Afterlight. It is a working, source-backed wildfire-preparedness tool that separates current public records, historical replay, and household drills. Its runtime detector is deterministic and fail-closed; it does not call a generative or machine-learning model, although I used AI tools during development and will disclose that. The Git history begins July 2, during the event submission period, and the project was prepared for but never submitted to another hackathon. Does this satisfy Hoobit's AI-powered requirement and current theme, or would it be ineligible? I want to describe it accurately before submitting.
 
 ## Project Overview Fields
 
@@ -31,6 +64,18 @@ Individual, unless actual teammates contributed and have agreed to be listed.
 React, TypeScript, Vite, Vitest, Playwright, Leaflet, OpenStreetMap, ArcGIS, NWS API, NASA EONET, Upstash Redis, Cloudflare Workers, Vercel
 
 Only keep deployment-platform tags for platforms you actually deploy to before submitting.
+
+**Proposed theme fit — paste only after the organizers confirm the theme and AI eligibility**
+
+> Afterlight addresses a failure that appears after every major disaster: the evidence exists, but the lesson does not reliably survive. It turns attributable wildfire timelines into bounded household practice while refusing to turn historical evidence into live emergency advice.
+
+**Originality and prior-work disclosure**
+
+> I built Afterlight during the Hoobit Hacks 2026 submission period. I also prepared a separate, unpublished Moonshot submission draft. This Hoobit entry is my original work. I have cited the official records, public APIs, maps, generated demo asset, and AI-assisted development work used in the project.
+
+**AI-use disclosure — rewrite in your own voice, but preserve every fact**
+
+> I used OpenAI Codex as an engineering assistant while prototyping, coding, testing, reviewing security and privacy boundaries, and organizing documentation. I directed the product concept, selected the safety boundaries and source material, reviewed the generated changes, and made the final product decisions. The app itself does not use a generative model to predict fires, recommend routes, or generate evacuation advice. Its historical detector is deterministic and fail-closed.
 
 ## Project Story — Copy Ready
 
@@ -98,26 +143,41 @@ https://github.com/rushtanu14/afterlight
 
 **Try it out**
 
-Required before a competitive submission. Deploy first, verify it, then enter:
+Current Sites URL:
 
 ```text
-https://YOUR-PUBLIC-DEPLOYMENT.example/?judge=1
+https://afterlight-replay.rushilcpm02.chatgpt.site/?judge=1
 ```
 
-Use the judge-mode URL as the first Try it Out link. Add the plain home URL second. Do not submit `localhost`.
+This deployment is currently owner-only and does **not** satisfy Hoobit's public-access requirement. Make the site public, then test the exact judge-mode URL in a signed-out/private browser window before entering it. Use judge mode as the first Try it Out link and `https://afterlight-replay.rushilcpm02.chatgpt.site/` second. Do not submit `localhost`.
 
 **Demo video**
 
-Required before a competitive submission. Upload the finished recording to YouTube or Vimeo with public or unlisted visibility and embedding enabled, then paste its share URL. Devpost does not accept a local video path as the demo link.
+Hoobit permits a publicly accessible prototype or a short YouTube demo, but a concise demo still makes the submission stronger. Upload the finished recording to YouTube with public or unlisted visibility and embedding enabled, then paste its share URL.
 
-**Moonshot supporting files already in this repository**
+**Supporting files already in this repository**
 
 - Moonshot paper: `docs/moonshot-paper.md`
 - Vision presentation script: `docs/vision-presentation.md`
 - Judge brief: `docs/judge-brief.md`
 - Cinematic opening asset and receipt: `docs/demo-cinematic-opening.md`
 
-The closed Moonshot event required a prototype/demonstration, Moonshot paper, and vision presentation. If the organizers reopen submissions, export the paper and presentation to the exact formats requested in the live form before uploading.
+These are evidence and presentation aids, not Hoobit-required uploads unless the live form asks for them.
+
+## Sources and Credits — Copy Ready
+
+> Historical timeline rows are attributed in-product to the Fire Safety Research Institute's Southern California Fires Timeline Report and worksheets and to Los Angeles County's Eaton Fire Timeline Overview. Current records come from NIFC WFIGS, the National Weather Service API, and NASA EONET. Maps use OpenStreetMap data/tiles and an attributable ArcGIS Palisades and Eaton perimeter. The cinematic opening image is AI-generated and is labeled as a demo asset, not incident evidence. Afterlight does not claim that these sources prove improved household outcomes.
+
+Add these links to the Devpost story or credits field:
+
+- [FSRI Southern California Fires Timeline Report](https://fsri.org/research-update/southern-california-fires-timeline-report)
+- [FSRI Palisades and Eaton timeline worksheets](https://docs.google.com/spreadsheets/d/1Xna6okyL59bk3m6oHphZrN-RWWxOtnBIL0R5EpaZ__4/edit)
+- [Los Angeles County Eaton Fire Timeline Overview](https://file.lacounty.gov/SDSInter/lac/1191567_EatonFireTimelineOverview.pdf)
+- [NIFC WFIGS current incident layer](https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations_Current/FeatureServer/0)
+- [National Weather Service API](https://www.weather.gov/documentation/services-web-api)
+- [NASA EONET API](https://eonet.gsfc.nasa.gov/docs/v3)
+- [OpenStreetMap copyright and attribution](https://www.openstreetmap.org/copyright)
+- [Palisades and Eaton dissolved fire perimeters](https://hub.arcgis.com/maps/ad51845ea5fb4eb483bc2a7c38b2370c)
 
 ## 90-Second Demo Video Script
 
@@ -156,28 +216,25 @@ The full-page screenshots are tall, so crop focused gallery images before upload
 
 ## Exact Submission Steps
 
-### Portfolio route available now
+### Correct the existing Hoobit submission
 
-1. Sign in at [Devpost](https://devpost.com/).
-2. Follow [Adding projects to your portfolio](https://help.devpost.com/article/116-adding-projects-to-your-portfolio) and choose **Add a project to your Portfolio**.
-3. Enter the name, tagline, and thumbnail above.
-4. Paste the Project Story and Built With tags.
-5. Add the verified deployment and repository under Try it Out.
-6. Add the final YouTube/Vimeo demo link and gallery images.
-7. Save, open **View**, and proofread every field in the rendered page.
-
-### Future hackathon route
-
-1. Register for the eligible event and re-read its live Rules and Requirements pages.
-2. From the event overview, choose **Start project**, or **Import from portfolio** if this project is already published.
-3. Confirm team size, age, country, build-period, required-tool, category, license, and video-length rules before importing the copy.
-4. Complete Manage Team, Project Overview, Project Details, and every event-specific Additional Details field.
-5. Check the agreement box and click **Submit project**. A Draft is not a submission.
-6. Confirm Devpost shows the green submitted state, then open **View** in a private browser window and test every link, image, video, and Markdown section.
+1. Open the existing [Afterlight submission](https://devpost.com/software/afterlight-clq3uz) and choose **Edit project**. Do not start another project.
+2. Open a Discord ticket: state that Afterlight is a deterministic, source-backed wildfire-preparedness tool with no runtime generative model; ask whether it satisfies the AI-powered requirement and announced theme. Save the organizer reply.
+3. Make the Sites deployment public and verify both public URLs while signed out.
+4. Push the current `main` branch so the public GitHub repository contains the exact submitted build.
+5. Replace the old tagline and story with the name, tagline, Built With tags, story, source credits, originality disclosure, and AI-use disclosure from this file.
+6. Add the verified public judge-mode URL while keeping the GitHub URL. Remove NASA FIRMS from the live feature claims and remove every `leave before`, safer-route, route-risk, prediction, scoring, or current decision-support claim.
+7. Add only actual teammates, then provide every required identity/contact field in Devpost's private additional-details area. Do not paste those details into the public story.
+8. Upload the gallery images in the recommended order. Add the YouTube demo if recorded.
+9. Save the edit, then confirm the project remains attached to Hoobit Hacks 2026 and still shows the submitted/published state.
+10. Open **View** in a private browser window and test every link, image, video, and Markdown section before the deadline.
 
 ## Final No-Fabrication Checklist
 
-- [ ] The chosen hackathon is open and Rushil is eligible.
+- [ ] Rushil is age 13–24, currently a student, and has guardian consent if required.
+- [ ] The Discord-announced theme was checked and the theme-fit sentence is accurate.
+- [ ] Hoobit confirmed that Afterlight's deterministic runtime satisfies the AI-powered requirement, or a truthful qualifying AI feature was added and verified before submission.
+- [ ] The project history and AI usage are disclosed honestly.
 - [ ] The repository contains the exact submitted build and is publicly accessible if required.
 - [ ] A public deployment loads on desktop and mobile.
 - [ ] `/?judge=1` works on the public deployment.
@@ -190,7 +247,11 @@ The full-page screenshots are tall, so crop focused gallery images before upload
 
 ## Current External Blockers
 
-1. Moonshot is closed; only the organizers can reopen it.
-2. The repository does not yet contain a verified public deployment URL.
-3. The repository does not yet contain a public YouTube/Vimeo demo URL.
-4. Human validation remains pending and must not be implied in the submission.
+1. Afterlight does not currently contain a runtime generative or machine-learning model; Hoobit organizer confirmation is needed before claiming it meets the AI-powered requirement.
+2. The Hoobit theme is not visible on its public Devpost page; confirm it in Discord before claiming theme fit.
+3. The Sites deployment exists but is owner-only; it must be made public and tested while signed out.
+4. The existing Devpost copy contains outdated and unsafe claims that do not match the current code or trust boundaries.
+5. Local `main` is two commits ahead of `origin/main`; the exact current build is not yet on the public GitHub repository.
+6. The live Devpost record has no video URL. This is optional if the public prototype works, but recommended.
+7. Personal eligibility/contact fields and guardian consent status cannot be completed from repository evidence.
+8. Human validation remains pending and must not be implied in the submission.

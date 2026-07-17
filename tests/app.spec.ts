@@ -562,6 +562,91 @@ test("print media isolates the real practice card and keeps rows intact", async 
   await expect(page.locator(".practice-card-rows > div").first()).toHaveCSS("break-inside", "avoid");
 });
 
+test("printable household drill card excludes live, historical, coordinate, and saved-memory records", async ({ page }) => {
+  await page.unroute("**/WFIGS_Incident_Locations_Current/**");
+  await page.route("**/WFIGS_Incident_Locations_Current/**", (route) => json(route, {
+    type: "FeatureCollection",
+    features: [{
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [-118.987654, 34.123456] },
+      properties: {
+        OBJECTID: 42,
+        IncidentName: "MOCK LIVE INCIDENT PRINT SENTINEL",
+        UniqueFireIdentifier: "2026-CALAC-PRINT-SENTINEL",
+        IncidentSize: 24,
+        PercentContained: 15,
+        FireDiscoveryDateTime: Date.UTC(2026, 5, 30, 9, 33),
+        ModifiedOnDateTime_dt: Date.UTC(2026, 5, 30, 10, 4),
+        POOCounty: "Los Angeles",
+        POOState: "US-CA",
+        POOProtectingAgency: "CAL FIRE"
+      }
+    }]
+  }));
+  await page.unroute("**/api.weather.gov/alerts/active**");
+  await page.route("**/api.weather.gov/alerts/active**", (route) => json(route, {
+    type: "FeatureCollection",
+    features: [{
+      properties: {
+        event: "LIVE ALERT PRINT SENTINEL",
+        headline: "LIVE ALERT PRINT SENTINEL headline",
+        severity: "Severe",
+        effective: "2026-07-03T18:00:00Z"
+      }
+    }]
+  }));
+  await page.addInitScript(() => {
+    localStorage.setItem("afterlight.household-memory.v1", JSON.stringify({
+      version: 1,
+      scenarios: {
+        "palisades-2025": {
+          confirmedIds: ["palisades-resident-only-closure"],
+          edits: { "palisades-resident-only-closure": "SAVED MEMORY EDIT PRINT SENTINEL" }
+        }
+      }
+    }));
+    localStorage.setItem("afterlight.household-drill.v1", JSON.stringify({
+      version: 1,
+      constraints: ["mobility"],
+      assignments: {
+        "base:official-sources": {
+          ownerRole: "Alert checker",
+          backupRole: "Backup adult",
+          actionNote: "County alerts plus local fire agency",
+          practiced: true
+        }
+      },
+      lastPracticedOn: "2026-07-12"
+    }));
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Find fires" }).click();
+  await expect(page.locator("#connectors")).toContainText("MOCK LIVE INCIDENT PRINT SENTINEL");
+  await expect(page.locator("#connectors")).toContainText("LIVE ALERT PRINT SENTINEL");
+
+  const card = page.locator(".practice-card");
+  await expect(card).toContainText("Practice card · not emergency guidance");
+  await expect(card).toContainText("Afterlight household drill");
+  await expect(card).toContainText("Choose official information channels");
+  await expect(card).toContainText("Practice the mobility-assistance handoff");
+  await expect(card).toContainText("Practice lesson: Resident-only closure appears before ignition");
+  await expect(card).toContainText("Alert checker");
+  await expect(card).toContainText("Backup adult");
+  await expect(card).toContainText("Unresolved");
+
+  const printableText = await card.innerText();
+  expect(printableText).not.toContain("MOCK LIVE INCIDENT PRINT SENTINEL");
+  expect(printableText).not.toContain("LIVE ALERT PRINT SENTINEL");
+  expect(printableText).not.toContain("official_action");
+  expect(printableText).not.toContain("access_restricted");
+  expect(printableText).not.toContain("34.123456");
+  expect(printableText).not.toContain("-118.987654");
+  expect(printableText).not.toContain("SAVED MEMORY EDIT PRINT SENTINEL");
+  await page.emulateMedia({ media: "print" });
+  await expect(card).toBeVisible();
+});
+
 test("captures stable desktop and mobile QA screenshots", async ({ page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");

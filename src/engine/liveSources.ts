@@ -98,11 +98,10 @@ const NIFC_LAYER_URL =
 const NWS_ALERTS_BASE_URL = "https://api.weather.gov/alerts/active";
 const GEOCODE_PROXY_URL = "/api/geocode";
 const EONET_EVENTS_URL = "https://eonet.gsfc.nasa.gov/api/v3/events";
-const FIRMS_API_URL = "https://firms.modaps.eosdis.nasa.gov/api/";
+const FIRMS_PROXY_ONLY_URL = "server-proxy-only:nasa-firms";
 const OFFICIAL_SOURCE_HOSTS = new Set([
   "earthobservatory.nasa.gov",
   "eonet.gsfc.nasa.gov",
-  "firms.modaps.eosdis.nasa.gov",
   "gdacs.org",
   "inciweb.wildfire.gov",
   "irwin.doi.gov",
@@ -627,7 +626,7 @@ export async function loadLiveIncidentBundle(query: string, options: LiveSourceO
       safeSource(() => loadEonetWildfires(location, fetcher, now), { id: "eonet", name: "NASA EONET", url: EONET_EVENTS_URL }, now)
     ]);
     const firmsState = sourceState(
-      { id: "firms", name: "NASA FIRMS", url: FIRMS_API_URL },
+      { id: "firms", name: "NASA FIRMS", url: FIRMS_PROXY_ONLY_URL },
       "optional",
       "NASA FIRMS requires a server proxy; no browser key or request is used.",
       0,

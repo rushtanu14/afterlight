@@ -138,6 +138,7 @@ The repository supports both Vercel and Cloudflare Workers deployment. `vercel.j
 - Moonshot paper: `docs/moonshot-paper.md`
 - Vision presentation: `docs/vision-presentation.md`
 - Devpost submission pack: `docs/devpost-submission.md`
+- Final Hoobit Devpost package: `docs/hoobit-devpost-final.md`
 - Operational runbook: `docs/RUNBOOK.md`
 
 ## Honest Limitations
